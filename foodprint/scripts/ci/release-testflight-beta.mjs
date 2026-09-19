@@ -95,15 +95,26 @@ export async function releaseExternalBeta({ api, appId, buildId, groupId, tester
     }
   }
 
-  const invitation = await api.request('/v1/betaTesterInvitations', 'POST', {
-    data: {
-      type: 'betaTesterInvitations',
-      relationships: {
-        app: { data: linkage('apps', appId) },
-        betaTester: { data: linkage('betaTesters', tester.id) },
+  let invitation = null;
+  let invitationDeferredUntilBuildInstallable = false;
+  try {
+    invitation = await api.request('/v1/betaTesterInvitations', 'POST', {
+      data: {
+        type: 'betaTesterInvitations',
+        relationships: {
+          app: { data: linkage('apps', appId) },
+          betaTester: { data: linkage('betaTesters', tester.id) },
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    if (String(error?.message || '').includes('STATE_ERROR.TESTER_INVITE.NO_INSTALLABLE_BUILDS')) {
+      // The first external build must pass Beta App Review. autoNotifyEnabled queues the email for approval.
+      invitationDeferredUntilBuildInstallable = true;
+    } else {
+      throw error;
+    }
+  }
 
   submissions = await api.request(`/v1/betaAppReviewSubmissions?filter[build]=${encodeURIComponent(buildId)}&limit=10`);
   const finalTester = await api.request(`/v1/betaTesters/${encodeURIComponent(tester.id)}?include=betaGroups`);
@@ -126,11 +137,13 @@ export async function releaseExternalBeta({ api, appId, buildId, groupId, tester
     testerState: finalTester.data?.attributes?.state || null,
     testerInviteType: finalTester.data?.attributes?.inviteType || null,
     testerAssignedToExternalGroup: !!testerGroups.data?.some((item) => item.id === groupId),
-    invitationRequested: invitation.data?.type === 'betaTesterInvitations',
-    invitationId: invitation.data?.id || null,
+    invitationRequested: invitation?.data?.type === 'betaTesterInvitations',
+    invitationId: invitation?.data?.id || null,
+    invitationDeferredUntilBuildInstallable,
     verifiedAt: new Date().toISOString(),
   };
-  if (!result.buildAssignedToExternalGroup || !result.autoNotifyEnabled || !result.testerAssignedToExternalGroup || !result.invitationRequested) {
+  if (!result.buildAssignedToExternalGroup || !result.autoNotifyEnabled || !result.testerAssignedToExternalGroup
+    || (!result.invitationRequested && !result.invitationDeferredUntilBuildInstallable)) {
     throw new Error('Apple did not confirm every requested TestFlight relationship.');
   }
   return result;
