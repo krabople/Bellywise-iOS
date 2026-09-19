@@ -41,8 +41,8 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
-    "export:web": "expo export --platform web",
-    "export:ios": "expo export --platform ios"
+    "export:web": "expo export --platform web --output-dir dist/web",
+    "export:ios": "expo export --platform ios --output-dir dist/ios"
   },
   "private": true
 }

@@ -5,18 +5,25 @@ import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
 import { T, C, F, Row, Button, Field, Notice, Chip, Pill, Sheet, IconButton } from './ui';
 import { DateField } from './DateField';
-import { resolveFood, ingredientsFromNames } from '../domain';
+import { resolveFood, ingredientsFromNames, localDateKey } from '../domain';
 import type { IngredientExposure, Level, Meal, SymptomDefinition, SymptomLog } from '../domain/types';
 import { parseIngredientLabel } from '../services/labelParser';
 import { isIngredientOcrAvailable, recognizeIngredientImage } from '../services/ocr';
 import { lookupBarcode, searchProducts, type CatalogProduct } from '../services/products';
 
 export const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 11)}`;
-export function MealForm({ initial, onClose, onSave, onDelete, initialMode = 'type' }: { initial?: Meal; onClose: () => void; onSave: (meal: Meal) => Promise<void>; onDelete?: () => Promise<void>; initialMode?: 'type' | 'scan' }) {
+function defaultEntryDate(selectedDay?: string): Date {
+  const now = new Date();
+  if (!selectedDay || selectedDay === localDateKey(now)) return now;
+  const noon = new Date(`${selectedDay}T12:00:00`);
+  return Number.isFinite(noon.getTime()) ? noon : now;
+}
+
+export function MealForm({ initial, selectedDay, onClose, onSave, onDelete, initialMode = 'type' }: { initial?: Meal; selectedDay?: string; onClose: () => void; onSave: (meal: Meal) => Promise<void>; onDelete?: () => Promise<void>; initialMode?: 'type' | 'scan' }) {
   const [mode, setMode] = useState<'type' | 'scan' | 'product'>(initial?.source === 'label' ? 'scan' : initialMode);
   const [kind, setKind] = useState<'food' | 'drink'>(initial?.kind || 'food');
   const [name, setName] = useState(initial?.name || '');
-  const [date, setDate] = useState(initial ? new Date(initial.eatenAt) : new Date());
+  const [date, setDate] = useState(() => initial ? new Date(initial.eatenAt) : defaultEntryDate(selectedDay));
   const [notes, setNotes] = useState(initial?.notes || '');
   const [variant, setVariant] = useState('');
   const [ingredients, setIngredients] = useState<IngredientExposure[]>(initial?.ingredients || []);
@@ -76,7 +83,7 @@ export function MealForm({ initial, onClose, onSave, onDelete, initialMode = 'ty
   const save = async () => {
     setError('');
     if (!name.trim()) { setError('Give this food or drink a name.'); return; }
-    if (!Number.isFinite(date.getTime()) || date.getTime() > Date.now() + 60_000) { setError('Choose a valid time in the past.'); return; }
+    if (!Number.isFinite(date.getTime()) || date.getTime() > Date.now()) { setError('Choose a valid time in the past.'); return; }
     if (!review || !confirmed) { setError('Review the ingredients and confirm before saving.'); return; }
     setBusy(true);
     try { await onSave({ id: initial?.id || uid(), name: name.trim(), kind, eatenAt: date.toISOString(), ingredients, source, notes: notes.trim(), labelText: source === 'label' ? label.trim() || undefined : undefined }); onClose(); }
@@ -107,11 +114,11 @@ export function MealForm({ initial, onClose, onSave, onDelete, initialMode = 'ty
   </Sheet>;
 }
 
-export function SymptomForm({ definitions, selectedIds, initial, onSave, onDelete, onClose, onManage }: { definitions: SymptomDefinition[]; selectedIds: string[]; initial?: SymptomLog; onSave: (s: SymptomLog) => Promise<void>; onDelete?: () => Promise<void>; onClose: () => void; onManage: () => void }) {
+export function SymptomForm({ definitions, selectedIds, initial, selectedDay, onSave, onDelete, onClose, onManage }: { definitions: SymptomDefinition[]; selectedIds: string[]; initial?: SymptomLog; selectedDay?: string; onSave: (s: SymptomLog) => Promise<void>; onDelete?: () => Promise<void>; onClose: () => void; onManage: () => void }) {
   const [kind, setKind] = useState<'negative' | 'positive'>(definitions.find(d => d.id === initial?.symptomId)?.kind || 'negative');
   const [selected, setSelected] = useState(initial?.symptomId || '');
   const [severity, setSeverity] = useState<Level>(initial?.severity || 2);
-  const [date, setDate] = useState(initial ? new Date(initial.occurredAt) : new Date());
+  const [date, setDate] = useState(() => initial ? new Date(initial.occurredAt) : defaultEntryDate(selectedDay));
   const [notes, setNotes] = useState(initial?.notes || '');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -119,7 +126,7 @@ export function SymptomForm({ definitions, selectedIds, initial, onSave, onDelet
   const shown = definitions.filter(d => d.kind === kind && (selectedIds.includes(d.id) || d.id === selected));
   const save = async () => {
     if (!selected) { setError('Choose a symptom or positive feeling first.'); return; }
-    if (!Number.isFinite(date.getTime()) || date.getTime() > Date.now() + 60_000) { setError('Choose a valid time in the past.'); return; }
+    if (!Number.isFinite(date.getTime()) || date.getTime() > Date.now()) { setError('Choose a valid time in the past.'); return; }
     setBusy(true);
     try { await onSave({ id: initial?.id || uid(), symptomId: selected, severity, occurredAt: date.toISOString(), notes: notes.trim() }); onClose(); }
     catch { setError('This entry could not be saved. Please try again.'); }

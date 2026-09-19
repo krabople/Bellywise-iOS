@@ -62,17 +62,22 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           import glob, os, re, subprocess
+          from pathlib import Path
           candidates = []
+          seen = set()
           for application in glob.glob('/Applications/Xcode*.app'):
-              developer = application + '/Contents/Developer'
+              developer = str(Path(application, 'Contents/Developer').resolve())
+              if developer in seen or 'beta' in (application + developer).lower():
+                  continue
+              seen.add(developer)
               try:
-                  text = subprocess.check_output([developer + '/usr/bin/xcodebuild', '-version'], text=True, stderr=subprocess.DEVNULL)
+                  text = subprocess.check_output(['xcodebuild', '-version'], env={**os.environ, 'DEVELOPER_DIR': developer}, text=True, stderr=subprocess.DEVNULL, timeout=20)
                   match = re.search(r'^Xcode (\d+)\.(\d+)(?:\.(\d+))?', text, re.M)
                   if match:
                       version = tuple(int(part or 0) for part in match.groups())
                       if version >= (26, 4, 0):
                           candidates.append((version, developer))
-              except (OSError, subprocess.CalledProcessError):
+              except (OSError, subprocess.SubprocessError):
                   pass
           if not candidates:
               raise SystemExit('This runner has no Xcode >= 26.4. Select a current macOS runner image before releasing.')
@@ -91,7 +96,7 @@ jobs:
           npm ci
           npm run typecheck
           npm test
-          node --test tests/apple-setup.test.mjs
+          node --test tests/apple-setup.test.mjs tests/verify-testflight.test.mjs
 
       - name: Generate iOS project
         run: |
@@ -146,19 +151,39 @@ jobs:
           set -euo pipefail
           pod install --project-directory=ios
 
-      - name: Build for iPhone Simulator
+      - name: Verify Release simulator startup and capture screenshot
+        env:
+          SKIP_IOS_SETUP: '1'
         run: |
           set -euo pipefail
-          xcodebuild build \
-            -workspace ios/Bellywise.xcworkspace \
-            -scheme Bellywise \
-            -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "$RUNNER_TEMP/Bellywise-simulator" \
-            CODE_SIGNING_ALLOWED=NO
+          bash ../scripts/ci/build-ios.sh
+
+      - name: Keep native screenshots and smoke result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bellywise-native-verification-${{ github.run_number }}
+          # Allowlist only: never upload source, derived data, JS bundles or the simulator ZIP.
+          path: |
+            source/artifacts/Bellywise-native-welcome.png
+            source/artifacts/Bellywise-startup-failure.png
+            source/artifacts/native-smoke.log
+            source/artifacts/xcode-version.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Refresh App Store Connect app record after native checks
+        id: apple_refresh
+        env:
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/apple-setup.mjs --output-dir "$RUNNER_TEMP/bellywise-signing-refresh"
 
       - name: Require the App Store Connect app record
-        if: ${{ steps.apple.outputs.app_record_required == 'true' }}
+        if: ${{ steps.apple_refresh.outputs.app_record_required == 'true' }}
         run: |
           printf '%s\n' '::error::The iOS simulator build passed and signing resources are ready. Create the Bellywise iOS app record in App Store Connect using bundle com.krabople.bellywise, then rerun this workflow. The public API cannot create that record.'
           exit 1
@@ -225,14 +250,6 @@ jobs:
               output.write('ipa_path=' + files[0] + '\n')
           PY
 
-      - name: Upload signed IPA artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: Bellywise-signed-IPA-${{ github.run_number }}
-          path: ${{ steps.archive.outputs.ipa_path }}
-          if-no-files-found: error
-          retention-days: 14
-
       - name: Upload to TestFlight and wait for processing
         uses: Apple-Actions/upload-testflight-build@v5
         with:
@@ -241,7 +258,28 @@ jobs:
           api-key-id: ${{ secrets.APPSTORE_KEY_ID }}
           api-private-key: ${{ secrets.APPSTORE_PRIVATE_KEY }}
           wait-for-processing: 'true'
-          release-notes: 'Try meal logging, editable label scans, custom symptoms, comfortable check-ins and pattern explanations. Please report confusing wording or incorrect ingredients. Do not change your diet or provoke symptoms to test this beta.'
+          release-notes: 'Try meal and drink logging, editable label scans, custom symptoms, comfortable check-ins and pattern explanations. Please report confusing wording or incorrect ingredients. Do not change your diet or provoke symptoms to test this beta.'
+
+      - name: Verify exact uploaded build finished Apple processing
+        env:
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+          APPSTORE_APP_ID: ${{ steps.apple_refresh.outputs.app_id }}
+        run: |
+          set -euo pipefail
+          MARKETING_VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$RUNNER_TEMP/Bellywise.xcarchive/Products/Applications/Bellywise.app/Info.plist")"
+          export MARKETING_VERSION
+          node scripts/ci/verify-testflight.mjs --output "$RUNNER_TEMP/Bellywise-processing.json"
+
+      - name: Keep Apple processing verification
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bellywise-processing-${{ github.run_number }}
+          path: ${{ runner.temp }}/Bellywise-processing.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Remove temporary signing files
         if: ${{ always() }}
@@ -262,5 +300,10 @@ jobs:
                   installed.unlink(missing_ok=True)
           if signing_folder.exists():
               shutil.rmtree(signing_folder)
+          refreshed_folder = (temporary_root / 'bellywise-signing-refresh').resolve()
+          if refreshed_folder.parent != temporary_root:
+              raise SystemExit('Unexpected refresh cleanup directory')
+          if refreshed_folder.exists():
+              shutil.rmtree(refreshed_folder)
           PY
           # import-codesign-certs performs its own temporary-keychain cleanup in its post step.

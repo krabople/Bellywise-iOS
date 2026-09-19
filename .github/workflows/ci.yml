@@ -60,15 +60,19 @@ jobs:
       - name: Install dependencies
         working-directory: foodprint
         run: npm ci
-      - name: Compile iOS Simulator app
+      - name: Compile and launch iOS Simulator app
         run: bash scripts/ci/build-ios.sh
-      - name: Keep build logs and simulator artifact
+      - name: Keep native screenshots, logs and simulator artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: Bellywise-ios-simulator
           path: |
             artifacts/*.log
+            artifacts/*.png
+            artifacts/*.ips
+            artifacts/*.crash
+            artifacts/simulator-devices.json
             artifacts/Bellywise-simulator.zip
           if-no-files-found: warn
           retention-days: 7
