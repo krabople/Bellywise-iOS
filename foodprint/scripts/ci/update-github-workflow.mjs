@@ -11,7 +11,7 @@ const endpoint = 'repos/krabople/Lifetwine/contents/.github/workflows/bellywise-
 const existing = gh(['api', endpoint]);
 const workflow = readFileSync(new URL('../../docs/bellywise-testflight.workflow.yml', import.meta.url));
 const updated = gh(['api', '--method', 'PUT', endpoint, '--input', '-'], JSON.stringify({
-  message: 'Verify Bellywise native startup and exact TestFlight processing',
+  message: 'Update Bellywise release verification [skip ci]',
   sha: existing.sha,
   content: workflow.toString('base64'),
 }));

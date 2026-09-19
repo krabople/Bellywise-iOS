@@ -71,7 +71,7 @@ def main():
     if info.get('CFBundleIdentifier') != arguments.bundle_id:
         raise ValueError('The inspected application has an unexpected bundle identifier.')
     subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(app)], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    signature = read_command_plist(['/usr/bin/codesign', '-d', '--entitlements', ':-', str(app)])
+    signature = read_command_plist(['/usr/bin/codesign', '--display', '--entitlements', '-', '--xml', str(app)])
     profile = read_command_plist(['/usr/bin/security', 'cms', '-D', '-i', str(app / 'embedded.mobileprovision')])
     result = validate_entitlements(signature, profile, arguments.bundle_id, arguments.team_id)
     result['signatureVerified'] = True

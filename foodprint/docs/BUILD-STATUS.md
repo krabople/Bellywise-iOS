@@ -12,6 +12,8 @@ The initial [signing run 35440815207](https://github.com/krabople/Lifetwine/acti
 
 The owner's internal beta group and beta review metadata are saved in App Store Connect. External tester setup remains pending the first uploaded build and any required Apple beta review. No tester email or review contact details are stored in this repository or public build logs.
 
+[Run 35442820274](https://github.com/krabople/Lifetwine/actions/runs/35442820274), source `ea863a3`, passed all 60 automated tests, compiled the Release simulator app and verified its ad-hoc Keychain signature. The simulator then reported `Data Migration Failed` during boot and denied the app launch. The stricter gate correctly blocked archiving/upload. The captured screen shows the simulator home screen, not a working app. A fresh-device boot/recovery path is being added; the app's storage protections remain unchanged.
+
 ## Prepared workflow revision
 
 `bellywise-testflight.workflow.yml` is a local template for the next installed workflow revision. Editing this file does not change an already-running GitHub Actions job.

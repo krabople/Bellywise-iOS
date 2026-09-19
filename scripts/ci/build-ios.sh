@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Simulator compilation, ad-hoc signing and verified welcome screen. Run on macOS.
+# Simulator compilation, ad-hoc signing and verified welcome screen. Run on macOS CI.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 APP_DIR="$REPO_DIR/foodprint"
@@ -70,6 +70,7 @@ SCHEME="$(basename "$WORKSPACE" .xcworkspace)"
 # Compile/typecheck the CI-only OCR helper before spending time compiling the app.
 xcrun --sdk macosx swiftc -swift-version 5 "$SCRIPT_DIR/read-simulator-screen.swift" -o "$ARTIFACT_DIR/read-simulator-screen"
 node --test "$APP_DIR/tests/native-screen.test.mjs"
+python3 "$APP_DIR/tests/test_simulator_session.py"
 SIMULATOR_ARCH="$(uname -m)"
 if [[ "$SIMULATOR_ARCH" != 'arm64' && "$SIMULATOR_ARCH" != 'x86_64' ]]; then
   echo "Unsupported simulator host architecture: $SIMULATOR_ARCH" >&2
@@ -136,39 +137,19 @@ if [[ "${SKIP_IOS_SETUP:-0}" != '1' ]]; then
   # Standalone private CI keeps the simulator app; the public release job must not.
   ditto -c -k --sequesterRsrc --keepParent "$SIMULATOR_APP" "$ARTIFACT_DIR/Bellywise-simulator.zip"
 fi
-xcrun simctl list devices available --json > "$ARTIFACT_DIR/simulator-devices.json"
-SIMULATOR_ID="$(python3 - "$ARTIFACT_DIR/simulator-devices.json" <<'PY'
-import json, re, sys
-data = json.load(open(sys.argv[1]))
-candidates = []
-for runtime, devices in data['devices'].items():
-    match = re.search(r'iOS-(\d+(?:-\d+)*)$', runtime)
-    if not match:
-        continue
-    version = tuple(int(part) for part in match[1].split('-'))
-    for device in devices:
-        if device.get('isAvailable') and device.get('name', '').startswith('iPhone'):
-            candidates.append((version, device.get('state') == 'Shutdown', device['name'], device['udid']))
-if not candidates:
-    sys.exit('No available iPhone simulator was found for this Xcode.')
-print(max(candidates)[3])
-PY
-)"
-BOOTED_BY_SCRIPT=0
+SIMULATOR_ID=''
 APP_PID=''
 
 collect_simulator_diagnostics() {
   local result=$?
   trap - EXIT
   set +e
-  if [[ -n "$APP_PID" ]]; then
-    xcrun simctl spawn "$SIMULATOR_ID" log show --last 3m --style compact --predicate "processID == $APP_PID" > "$ARTIFACT_DIR/app-system.log" 2>&1
-  fi
   if [[ "$result" -ne 0 ]]; then
     printf '\nFAIL: Native verification exited with status %s.\n' "$result" | tee -a "$ARTIFACT_DIR/native-smoke.log" >&2
-    xcrun simctl io "$SIMULATOR_ID" screenshot --type=png "$ARTIFACT_DIR/Bellywise-startup-failure.png" > "$ARTIFACT_DIR/failure-screenshot.log" 2>&1
+    python3 "$SCRIPT_DIR/simulator-session.py" diagnose --artifacts "$ARTIFACT_DIR" --bundle "$BUNDLE_ID"
+  elif [[ -n "$APP_PID" ]]; then
+    xcrun simctl spawn "$SIMULATOR_ID" log show --last 3m --style compact --predicate "processID == $APP_PID" > "$ARTIFACT_DIR/app-system.log" 2>&1
   fi
-  xcrun simctl spawn "$SIMULATOR_ID" launchctl list > "$ARTIFACT_DIR/simulator-processes.log" 2>&1
   # Keep crash reports from this fresh CI application run when available.
   python3 - "$APP_PROCESS" "$ARTIFACT_DIR" <<'PY'
 import shutil, sys, time
@@ -177,40 +158,19 @@ for report in (Path.home() / 'Library/Logs/DiagnosticReports').glob(sys.argv[1] 
     if report.is_file() and time.time() - report.stat().st_mtime < 600:
         shutil.copy2(report, Path(sys.argv[2]) / report.name)
 PY
-  xcrun simctl status_bar "$SIMULATOR_ID" clear > /dev/null 2>&1
-  xcrun simctl terminate "$SIMULATOR_ID" "$BUNDLE_ID" > /dev/null 2>&1
-  if [[ "$BOOTED_BY_SCRIPT" -eq 1 ]]; then
-    xcrun simctl shutdown "$SIMULATOR_ID" > /dev/null 2>&1
-  fi
+  python3 "$SCRIPT_DIR/simulator-session.py" cleanup --artifacts "$ARTIFACT_DIR" --bundle "$BUNDLE_ID"
   exit "$result"
 }
 trap collect_simulator_diagnostics EXIT
 
-SIMULATOR_STATE="$(python3 - "$ARTIFACT_DIR/simulator-devices.json" "$SIMULATOR_ID" <<'PY'
-import json, sys
-data = json.load(open(sys.argv[1]))
-print(next(d['state'] for ds in data['devices'].values() for d in ds if d['udid'] == sys.argv[2]))
-PY
-)"
-if [[ "$SIMULATOR_STATE" != 'Booted' ]]; then
-  xcrun simctl boot "$SIMULATOR_ID"
-  BOOTED_BY_SCRIPT=1
-fi
-xcrun simctl bootstatus "$SIMULATOR_ID" -b 2>&1 | tee "$ARTIFACT_DIR/simulator-boot.log"
-xcrun simctl ui "$SIMULATOR_ID" appearance light
-xcrun simctl status_bar "$SIMULATOR_ID" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
-xcrun simctl install "$SIMULATOR_ID" "$SIMULATOR_APP"
+# Create only new CI-owned devices. Recovery never rebuilds or re-signs the app.
+# bootstatus's exit code alone is insufficient: it can return 0 after migration failure.
+SIMULATOR_SDK="$(xcrun --sdk iphonesimulator --show-sdk-version)"
 touch "$ARTIFACT_DIR/app-stdout.log" "$ARTIFACT_DIR/app-stderr.log"
-if ! LAUNCH_OUTPUT="$(xcrun simctl launch --terminate-running-process --stdout="$ARTIFACT_DIR/app-stdout.log" --stderr="$ARTIFACT_DIR/app-stderr.log" "$SIMULATOR_ID" "$BUNDLE_ID" 2>&1)"; then
-  printf '%s\n' "$LAUNCH_OUTPUT" | tee "$ARTIFACT_DIR/app-launch.log"
-  exit 1
-fi
-printf '%s\n' "$LAUNCH_OUTPUT" | tee "$ARTIFACT_DIR/app-launch.log"
-APP_PID="$(printf '%s\n' "$LAUNCH_OUTPUT" | tail -1 | awk -F': ' '{print $NF}')"
-if [[ ! "$APP_PID" =~ ^[0-9]+$ ]]; then
-  echo "Could not identify the simulator application's process ID." >&2
-  exit 1
-fi
+python3 "$SCRIPT_DIR/simulator-session.py" start --artifacts "$ARTIFACT_DIR" \
+  --bundle "$BUNDLE_ID" --app "$SIMULATOR_APP" --sdk "$SIMULATOR_SDK"
+SIMULATOR_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["device"])' "$ARTIFACT_DIR/simulator-session.json")"
+APP_PID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pid"])' "$ARTIFACT_DIR/simulator-session.json")"
 
 # The Release app must start using its embedded JS bundle, encrypted database and fonts.
 sleep 8
@@ -223,19 +183,19 @@ for attempt in 1 2 3 4 5 6; do
   xcrun simctl io "$SIMULATOR_ID" screenshot --type=png "$ARTIFACT_DIR/Bellywise-native-welcome.png" 2>&1 | tee "$ARTIFACT_DIR/screenshot.log"
   "$ARTIFACT_DIR/read-simulator-screen" "$ARTIFACT_DIR/Bellywise-native-welcome.png" > "$ARTIFACT_DIR/screen-ocr.json"
   if node "$SCRIPT_DIR/verify-native-screen.mjs" "$ARTIFACT_DIR/screen-ocr.json" > "$ARTIFACT_DIR/screen-verification.log" 2>&1; then
-    cat "$ARTIFACT_DIR/screen-verification.log" | tee "$ARTIFACT_DIR/native-smoke.log"
+    cat "$ARTIFACT_DIR/screen-verification.log" | tee -a "$ARTIFACT_DIR/native-smoke.log"
     WELCOME_CONFIRMED=1
     break
   else
     screen_status=$?
-    cat "$ARTIFACT_DIR/screen-verification.log" | tee "$ARTIFACT_DIR/native-smoke.log"
+    cat "$ARTIFACT_DIR/screen-verification.log" | tee -a "$ARTIFACT_DIR/native-smoke.log"
     # A detected storage/error screen is a hard failure. Only an unfinished render retries.
     if [[ "$screen_status" -ne 3 ]]; then exit "$screen_status"; fi
     if [[ "$attempt" -lt 6 ]]; then sleep 5; fi
   fi
 done
 if [[ "$WELCOME_CONFIRMED" -ne 1 ]]; then
-  echo "FAIL: The app never displayed the complete expected welcome screen." | tee "$ARTIFACT_DIR/native-smoke.log" >&2
+  echo "FAIL: The app never displayed the complete expected welcome screen." | tee -a "$ARTIFACT_DIR/native-smoke.log" >&2
   exit 1
 fi
 sleep 5
