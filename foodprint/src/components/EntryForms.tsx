@@ -1,0 +1,141 @@
+import React, { useMemo, useRef, useState } from 'react';
+import { Linking, Platform, Pressable, Switch, View } from 'react-native';
+import { Camera, Check, CheckCheck, FileText, Plus, Search, Trash2, X, Image as ImageIcon, ScanLine } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { File } from 'expo-file-system';
+import { T, C, F, Row, Button, Field, Notice, Chip, Pill, Sheet, IconButton } from './ui';
+import { DateField } from './DateField';
+import { resolveFood, ingredientsFromNames } from '../domain';
+import type { IngredientExposure, Level, Meal, SymptomDefinition, SymptomLog } from '../domain/types';
+import { parseIngredientLabel } from '../services/labelParser';
+import { isIngredientOcrAvailable, recognizeIngredientImage } from '../services/ocr';
+import { lookupBarcode, searchProducts, type CatalogProduct } from '../services/products';
+
+export const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 11)}`;
+export function MealForm({ initial, onClose, onSave, onDelete, initialMode = 'type' }: { initial?: Meal; onClose: () => void; onSave: (meal: Meal) => Promise<void>; onDelete?: () => Promise<void>; initialMode?: 'type' | 'scan' }) {
+  const [mode, setMode] = useState<'type' | 'scan' | 'product'>(initial?.source === 'label' ? 'scan' : initialMode);
+  const [kind, setKind] = useState<'food' | 'drink'>(initial?.kind || 'food');
+  const [name, setName] = useState(initial?.name || '');
+  const [date, setDate] = useState(initial ? new Date(initial.eatenAt) : new Date());
+  const [notes, setNotes] = useState(initial?.notes || '');
+  const [variant, setVariant] = useState('');
+  const [ingredients, setIngredients] = useState<IngredientExposure[]>(initial?.ingredients || []);
+  const [review, setReview] = useState(!!initial);
+  const [label, setLabel] = useState(initial?.labelText || '');
+  const [manualSelection, setManualSelection] = useState(false);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [newIngredient, setNewIngredient] = useState('');
+  const [source, setSource] = useState<Meal['source']>(initial?.source || 'typed');
+  const [query, setQuery] = useState('');
+  const [products, setProducts] = useState<CatalogProduct[]>([]);
+  const [searched, setSearched] = useState(false);
+  const [confirmed, setConfirmed] = useState(!!initial);
+  const [deleteCheck, setDeleteCheck] = useState(false);
+  const resolution = useMemo(() => resolveFood(name, variant || undefined), [name, variant]);
+  const currentOperation = useRef(0);
+  const resetReview = () => { setReview(false); setConfirmed(false); setError(''); setWarnings([]); };
+  const showTyped = () => { setIngredients(resolution.ingredients); setReview(true); setWarnings(resolution.matched ? [] : ['This food or drink is not in the offline recipe guide. Add its ingredients, or save the entry without ingredient assumptions.']); setSource('typed'); setConfirmed(false); };
+  const parseLabel = (text = label, manual = manualSelection, confidence?: number, product?: CatalogProduct) => {
+    const parsed = parseIngredientLabel(text, { source: product ? 'catalog' : manual ? 'manual' : 'ocr', ocrConfidence: confidence });
+    const allergens = [...new Set([...parsed.allergens, ...(product?.allergens ?? [])])];
+    const traces = [...new Set([...parsed.mayContain, ...(product?.traces ?? [])])];
+    setWarnings([...parsed.warnings, ...(product?.warnings ?? []), ...(allergens.length ? [`Allergen statement (separate from ingredients): ${allergens.join(', ')}.`] : []), ...(traces.length ? [`May contain: ${traces.join(', ')}. This is a trace warning, not confirmed consumption.`] : [])]);
+    if (!parsed.ingredients.length) { setError('Select or type just the ingredient list below, then turn on “I selected only the ingredients”.'); setReview(false); return; }
+    setError(''); setIngredients(ingredientsFromNames(parsed.ingredients, 'inferred')); setSource('label'); setReview(true); setConfirmed(false);
+  };
+  const scan = async (camera: boolean) => {
+    if (!isIngredientOcrAvailable()) { setError('Camera text recognition runs in the iPhone or iPad build. In this browser preview, paste a label below to try the ingredient parser.'); return; }
+    setBusy(true); setError(''); let imageUri: string | undefined;
+    try {
+      if (camera) { const permission = await ImagePicker.requestCameraPermissionsAsync(); if (!permission.granted) throw new Error('Camera access is off. You can enable it in Settings, choose a photo, or paste a label.'); }
+      const result = camera ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1, allowsEditing: true }) : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1, allowsEditing: true });
+      if (result.canceled) return;
+      imageUri = result.assets[0].uri;
+      const recognition = await recognizeIngredientImage(imageUri);
+      setLabel(recognition.text); setManualSelection(false); parseLabel(recognition.text, false, recognition.confidence);
+    } catch (e) { setError(e instanceof Error ? e.message : 'The label could not be read. Try better lighting or paste the text.'); }
+    finally { if (imageUri) { try { const photo = new File(imageUri); if (photo.exists) photo.delete(); } catch { /* OS may already have removed the picker cache. */ } } setBusy(false); }
+  };
+  const search = async () => {
+    const operation = ++currentOperation.current; setBusy(true); setError(''); setSearched(false);
+    try {
+      const q = query.trim();
+      const result = /^\d{8,14}$/.test(q) ? await lookupBarcode(q).then(p => p ? [p] : []) : await searchProducts(q);
+      if (operation === currentOperation.current) { setProducts(result); setSearched(true); }
+    } catch (e) { if (operation === currentOperation.current) setError(e instanceof Error ? e.message : 'Product search is unavailable.'); }
+    finally { if (operation === currentOperation.current) setBusy(false); }
+  };
+  const chooseProduct = (p: CatalogProduct) => {
+    setName(p.name); setNotes([p.brands, `Product data: ${p.sourceUrl}`, 'Open Food Facts · ODbL'].filter(Boolean).join('\n'));
+    setLabel(p.ingredientsText || ''); setMode('scan'); setManualSelection(true); setProducts([]);
+    if (p.ingredientsText) parseLabel(p.ingredientsText, true, undefined, p);
+    else { setWarnings(p.warnings); setError('This product has no ingredients in the catalogue. Scan its label or enter ingredients yourself.'); setReview(false); }
+  };
+  const save = async () => {
+    setError('');
+    if (!name.trim()) { setError('Give this food or drink a name.'); return; }
+    if (!Number.isFinite(date.getTime()) || date.getTime() > Date.now() + 60_000) { setError('Choose a valid time in the past.'); return; }
+    if (!review || !confirmed) { setError('Review the ingredients and confirm before saving.'); return; }
+    setBusy(true);
+    try { await onSave({ id: initial?.id || uid(), name: name.trim(), kind, eatenAt: date.toISOString(), ingredients, source, notes: notes.trim(), labelText: source === 'label' ? label.trim() || undefined : undefined }); onClose(); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Your entry could not be saved. Please try again.'); }
+    finally { setBusy(false); }
+  };
+  return <Sheet title={initial ? `Edit ${kind}` : 'What did you eat or drink?'} subtitle="A little detail now makes your patterns more useful." onClose={onClose}>
+    <Row style={{ gap: 8 }}><Chip label="Food" selected={kind === 'food'} onPress={() => setKind('food')} /><Chip label="Drink" selected={kind === 'drink'} onPress={() => setKind('drink')} /></Row>
+    {!initial && <Row style={{ flexWrap: 'wrap', gap: 8 }}>{(['type', 'scan', 'product'] as const).map(m => <Chip key={m} label={m === 'type' ? 'Type a name' : m === 'scan' ? 'Scan a label' : 'Find a product'} selected={mode === m} onPress={() => { setMode(m); resetReview(); }} />)}</Row>}
+    {mode === 'product' && <><Notice>Search the Open Food Facts catalogue by name or barcode. Only this search is sent to Open Food Facts; your diary stays on your device.</Notice><Field label="Product name or barcode" value={query} onChangeText={setQuery} placeholder="e.g. Alpro oat milk or 13-digit barcode" returnKeyType="search" onSubmitEditing={search} /><Button label="Search products" icon={Search} onPress={search} busy={busy} disabled={query.trim().length < 3} />{products.map(p => <Pressable key={p.barcode} accessibilityRole="button" onPress={() => chooseProduct(p)} style={{ padding: 16, borderWidth: 1, borderColor: C.line, borderRadius: 14 }}><T style={{ fontFamily: F.semi }}>{p.name}</T><T muted style={{ fontSize: 12 }}>{p.brands || p.barcode} · {p.ingredientsText ? 'Ingredients available' : 'Label needed'}</T></Pressable>)}{searched && products.length === 0 && <T muted>No matching products. Try the barcode, or scan the label.</T>}<Pressable accessibilityRole="link" onPress={() => Linking.openURL('https://world.openfoodfacts.org')}><T muted style={{ fontSize: 11 }}>Product data: Open Food Facts · Open Database License (ODbL)</T></Pressable></>}
+    {mode !== 'product' && <>
+      <Field label={kind === 'drink' ? 'Drink' : 'Food or meal'} value={name} onChangeText={v => { setName(v); if (mode === 'type') { setVariant(''); resetReview(); } }} placeholder={kind === 'drink' ? 'e.g. oat latte, beer, orange juice' : 'e.g. bread, spaghetti bolognese'} maxLength={300} />
+      {mode === 'type' && !review && <>{resolution.questions.map(q => <View key={q.id} style={{ gap: 9 }}><T style={{ fontFamily: F.medium }}>{q.prompt}</T><Row style={{ flexWrap: 'wrap', gap: 8 }}>{q.options.map(o => <Chip key={o.id} label={o.label} selected={variant === o.id} onPress={() => setVariant(o.id)} />)}</Row></View>)}{name.length > 1 && <T muted style={{ fontSize: 12 }}>{resolution.description}</T>}<Button label="Review ingredients" icon={CheckCheck} disabled={!name.trim()} onPress={showTyped} /></>}
+      {mode === 'scan' && <><Row><Button label="Take photo" icon={Camera} onPress={() => scan(true)} busy={busy} style={{ flex: 1 }} /><Button label="Choose photo" icon={ImageIcon} variant="secondary" onPress={() => scan(false)} disabled={busy} style={{ flex: 1 }} /></Row><T muted style={{ fontSize: 12 }}>Keep the “Ingredients” heading in frame. Crop away other panels. Text recognition happens on your device.</T><Field label="Label text" value={label} onChangeText={v => { setLabel(v); resetReview(); }} placeholder="Ingredients: wheat flour, water, yeast, salt…" multiline /><Row style={{ justifyContent: 'space-between' }}><T style={{ flex: 1, fontSize: 12 }}>I selected only the ingredients</T><Switch accessibilityLabel="I selected only the ingredients" value={manualSelection} onValueChange={v => { setManualSelection(v); resetReview(); }} trackColor={{ true: C.green }} /></Row><Button label="Find ingredients in text" icon={ScanLine} variant="secondary" onPress={() => parseLabel()} disabled={!label.trim() || busy} /></>}
+      {warnings.map((w, i) => <Notice warm key={i}>{w}</Notice>)}
+      {review && <><Row style={{ justifyContent: 'space-between' }}><T style={{ fontFamily: F.semi }}>Review the ingredients</T><Pill label={`${ingredients.length} ingredients`} /></Row><T muted style={{ fontSize: 12 }}>Recipe suggestions are estimates. Remove anything you didn’t consume. Tap “Confirm” only when you know an ingredient was present.</T>
+        {ingredients.length === 0 && <Notice>No ingredients yet. You can add them below, or save this entry by name. Unknown ingredients cannot contribute to ingredient patterns.</Notice>}
+        <View style={{ gap: 4 }}>{ingredients.map((ingredient, i) => <Row key={`${ingredient.id}-${i}`} style={{ paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: C.line }}><View style={{ flex: 1 }}><T style={{ fontSize: 13 }}>{ingredient.name}</T><T muted style={{ fontSize: 10 }}>{ingredient.confidence === 'confirmed' ? 'Confirmed by you' : 'Suggested · not yet confirmed'}</T></View><Pressable accessibilityRole="button" onPress={() => setIngredients(xs => xs.map((x, j) => j === i ? { ...x, confidence: x.confidence === 'confirmed' ? 'inferred' : 'confirmed' } : x))} style={{ padding: 9 }}><T style={{ fontSize: 11, color: C.green }}>{ingredient.confidence === 'confirmed' ? 'Unconfirm' : 'Confirm'}</T></Pressable><IconButton icon={X} label={`Remove ${ingredient.name}`} onPress={() => setIngredients(xs => xs.filter((_, j) => j !== i))} /></Row>)}</View>
+        <Row><View style={{ flex: 1 }}><Field value={newIngredient} onChangeText={setNewIngredient} placeholder="Add an ingredient you know" maxLength={300} /></View><IconButton icon={Plus} label="Add ingredient" onPress={() => { if (newIngredient.trim()) { const additions = ingredientsFromNames([newIngredient.trim()], 'confirmed'); setIngredients(xs => [...xs.filter(x => !additions.some(a => a.id === x.id)), ...additions]); setNewIngredient(''); } }} /></Row>
+        {source === 'label' && <Button label="I checked these against the label" variant="secondary" icon={CheckCheck} onPress={() => { setIngredients(xs => xs.map(x => ({ ...x, confidence: 'confirmed' }))); setConfirmed(true); }} />}
+        <DateField value={date} onChange={setDate} label="Had at" /><Field label={kind === 'drink' ? 'Amount & notes (optional)' : 'Portion & notes (optional)'} value={notes} onChangeText={setNotes} placeholder={kind === 'drink' ? 'e.g. 250 ml, decaf; with oat milk or a mixer' : 'e.g. two slices, with butter; homemade'} multiline maxLength={10000} />
+        <Row><Switch accessibilityLabel="I have reviewed these ingredients" value={confirmed} onValueChange={setConfirmed} trackColor={{ true: C.green }} /><T style={{ flex: 1, fontSize: 12 }}>I’ve reviewed this entry. Unconfirmed suggestions will stay marked as estimates.</T></Row>
+        <Button label={initial ? 'Save changes' : 'Add to my journal'} icon={Check} onPress={save} busy={busy} disabled={!confirmed} />
+      </>}
+    </>}
+    {!!error && <Notice warm>{error}</Notice>}
+    {initial && onDelete && <><Button label={deleteCheck ? `Yes, delete this ${kind} entry` : `Delete ${kind} entry`} icon={Trash2} variant="danger" onPress={async () => { if (!deleteCheck) { setDeleteCheck(true); return; } try { await onDelete(); onClose(); } catch { setError('Could not delete the entry.'); } }} />{deleteCheck && <T muted style={{ fontSize: 12 }}>This removes the entry from your journal and recalculates patterns.</T>}</>}
+  </Sheet>;
+}
+
+export function SymptomForm({ definitions, selectedIds, initial, onSave, onDelete, onClose, onManage }: { definitions: SymptomDefinition[]; selectedIds: string[]; initial?: SymptomLog; onSave: (s: SymptomLog) => Promise<void>; onDelete?: () => Promise<void>; onClose: () => void; onManage: () => void }) {
+  const [kind, setKind] = useState<'negative' | 'positive'>(definitions.find(d => d.id === initial?.symptomId)?.kind || 'negative');
+  const [selected, setSelected] = useState(initial?.symptomId || '');
+  const [severity, setSeverity] = useState<Level>(initial?.severity || 2);
+  const [date, setDate] = useState(initial ? new Date(initial.occurredAt) : new Date());
+  const [notes, setNotes] = useState(initial?.notes || '');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const shown = definitions.filter(d => d.kind === kind && (selectedIds.includes(d.id) || d.id === selected));
+  const save = async () => {
+    if (!selected) { setError('Choose a symptom or positive feeling first.'); return; }
+    if (!Number.isFinite(date.getTime()) || date.getTime() > Date.now() + 60_000) { setError('Choose a valid time in the past.'); return; }
+    setBusy(true);
+    try { await onSave({ id: initial?.id || uid(), symptomId: selected, severity, occurredAt: date.toISOString(), notes: notes.trim() }); onClose(); }
+    catch { setError('This entry could not be saved. Please try again.'); }
+    finally { setBusy(false); }
+  };
+  return <Sheet title={initial ? 'Edit how you felt' : 'How are you feeling?'} subtitle="The good days matter, too." onClose={onClose}>
+    <Row><Chip label="A symptom" selected={kind === 'negative'} onPress={() => { setKind('negative'); setSelected(''); }} /><Chip label="Something positive" selected={kind === 'positive'} onPress={() => { setKind('positive'); setSelected(''); }} /></Row>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 9 }}>{shown.map(d => <Chip key={d.id} label={d.name} selected={selected === d.id} onPress={() => setSelected(d.id)} />)}</View>
+    {shown.length === 0 && <T muted>You haven’t selected any {kind === 'positive' ? 'positive feelings' : 'symptoms'} to track yet.</T>}
+    <Button label="Choose symptoms or add your own" icon={Plus} variant="ghost" onPress={onManage} />
+    <T style={{ fontFamily: F.semi }}>{kind === 'positive' ? 'How noticeable was it?' : 'How intense was it?'}</T>
+    <Row style={{ justifyContent: 'space-between' }}>{([1, 2, 3, 4, 5] as Level[]).map(v => <Pressable key={v} accessibilityRole="button" accessibilityLabel={`${v} of 5`} accessibilityState={{ selected: severity === v }} onPress={() => setSeverity(v)} style={{ width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', backgroundColor: severity === v ? (kind === 'positive' ? C.green : C.orange) : C.bg, borderWidth: 1, borderColor: severity === v ? 'transparent' : C.line }}><T style={{ color: severity === v ? '#fff' : C.muted, fontFamily: F.semi }}>{v}</T></Pressable>)}</Row>
+    <Row style={{ justifyContent: 'space-between', marginTop: -12 }}><T muted style={{ fontSize: 11 }}>Slight</T><T muted style={{ fontSize: 11 }}>Very strong</T></Row>
+    <DateField value={date} onChange={setDate} label="Felt at" /><Field label="Anything else? (optional)" value={notes} onChangeText={setNotes} placeholder="Duration, activity, medication, or anything unusual…" multiline />
+    <Notice>{kind === 'positive' ? 'Positive feelings are analysed separately. A comfortable day does not prove a food is safe for an allergy or coeliac disease.' : 'If you have trouble breathing, sudden mouth or throat swelling, or feel faint after eating, seek emergency help now. Don’t wait for a pattern.'}</Notice>
+    {!!error && <Notice warm>{error}</Notice>}<Button label={initial ? 'Save changes' : 'Save how I feel'} icon={Check} onPress={save} busy={busy} />
+    {onDelete && <Button label={deleting ? 'Yes, delete this entry' : 'Delete entry'} icon={Trash2} variant="danger" onPress={async () => { if (!deleting) { setDeleting(true); return; } try { await onDelete(); onClose(); } catch { setError('Could not delete the entry.'); } }} />}
+  </Sheet>;
+}

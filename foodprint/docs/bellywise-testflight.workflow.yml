@@ -1,0 +1,266 @@
+# Install this workflow in krabople/Lifetwine/.github/workflows/bellywise-testflight.yml.
+# It uses that repository's existing Apple signing secrets and a read-only Bellywise deploy key.
+name: Bellywise to TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Bellywise source commit SHA, tag or branch
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bellywise-testflight
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+        working-directory: source/foodprint
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+      APP_BUNDLE_ID: com.krabople.bellywise
+      TEAM_ID: 6YYA8L76Y8
+      APP_NAME: Bellywise
+      BUILD_NUMBER: ${{ github.run_number }}
+
+    steps:
+      - name: Check out Bellywise source
+        uses: actions/checkout@v7
+        with:
+          repository: krabople/Bellywise-iOS
+          ref: ${{ inputs.ref }}
+          path: source
+          ssh-key: ${{ secrets.BELLYWISE_SOURCE_DEPLOY_KEY }}
+          persist-credentials: false
+
+      - name: Record exact source revision
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          printf 'Source commit: `%s`\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: source/foodprint/package-lock.json
+
+      - name: Select Xcode 26.4 or later
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import glob, os, re, subprocess
+          candidates = []
+          for application in glob.glob('/Applications/Xcode*.app'):
+              developer = application + '/Contents/Developer'
+              try:
+                  text = subprocess.check_output([developer + '/usr/bin/xcodebuild', '-version'], text=True, stderr=subprocess.DEVNULL)
+                  match = re.search(r'^Xcode (\d+)\.(\d+)(?:\.(\d+))?', text, re.M)
+                  if match:
+                      version = tuple(int(part or 0) for part in match.groups())
+                      if version >= (26, 4, 0):
+                          candidates.append((version, developer))
+              except (OSError, subprocess.CalledProcessError):
+                  pass
+          if not candidates:
+              raise SystemExit('This runner has no Xcode >= 26.4. Select a current macOS runner image before releasing.')
+          _, selected = sorted(candidates)[-1]
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('DEVELOPER_DIR=' + selected + '\n')
+          subprocess.run(['sudo', 'xcode-select', '--switch', selected], check=True)
+          print('Selected', selected)
+          PY
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Install and validate JavaScript
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run typecheck
+          npm test
+          node --test tests/apple-setup.test.mjs
+
+      - name: Generate iOS project
+        run: |
+          set -euo pipefail
+          npx expo prebuild --platform ios --no-install
+          test -d ios/Bellywise.xcodeproj
+
+      - name: Import existing Apple distribution identity
+        uses: Apple-Actions/import-codesign-certs@v7
+        with:
+          p12-file-base64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          p12-password: ${{ secrets.P12_PASSWORD }}
+
+      - name: Identify the imported signing certificate
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re, subprocess
+          # Limit the search to the keychain created by import-codesign-certs.
+          keychain = 'signing_temp.keychain'
+          identities = subprocess.check_output(['security', 'find-identity', '-v', '-p', 'codesigning', keychain], text=True)
+          matching = re.findall(r'\b([0-9A-F]{40})\s+"(?:Apple Distribution|iPhone Distribution):[^"\n]+\(' + re.escape(os.environ['TEAM_ID']) + r'\)"', identities)
+          unique = sorted(set(matching))
+          if len(unique) != 1:
+              raise SystemExit('Expected exactly one imported distribution identity for the configured team; refusing to choose arbitrarily.')
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('CERTIFICATE_SHA1=' + unique[0] + '\n')
+          print('Verified one imported distribution signing identity for the configured team.')
+          PY
+
+      - name: Prepare bundle identifier and provisioning profile
+        id: apple
+        env:
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/apple-setup.mjs --apply --output-dir "$RUNNER_TEMP/bellywise-signing"
+
+      - name: Keep non-secret signing summary
+        if: ${{ always() && steps.apple.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bellywise-signing-summary-${{ github.run_number }}
+          path: ${{ runner.temp }}/bellywise-signing/manifest.json
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Install CocoaPods dependencies
+        run: |
+          set -euo pipefail
+          pod install --project-directory=ios
+
+      - name: Build for iPhone Simulator
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -workspace ios/Bellywise.xcworkspace \
+            -scheme Bellywise \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/Bellywise-simulator" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Require the App Store Connect app record
+        if: ${{ steps.apple.outputs.app_record_required == 'true' }}
+        run: |
+          printf '%s\n' '::error::The iOS simulator build passed and signing resources are ready. Create the Bellywise iOS app record in App Store Connect using bundle com.krabople.bellywise, then rerun this workflow. The public API cannot create that record.'
+          exit 1
+
+      - name: Apply manual signing to the main app target
+        run: |
+          set -euo pipefail
+          ruby - <<'RUBY'
+          require 'json'
+          require 'fileutils'
+          require 'xcodeproj'
+          folder = File.join(ENV.fetch('RUNNER_TEMP'), 'bellywise-signing')
+          manifest = JSON.parse(File.read(File.join(folder, 'manifest.json')))
+          profile_uuid = manifest.fetch('profileUuid')
+          raise 'Provisioning UUID missing' unless profile_uuid
+          destination = File.expand_path('~/Library/MobileDevice/Provisioning Profiles')
+          FileUtils.mkdir_p(destination)
+          FileUtils.cp(File.join(folder, "#{profile_uuid}.mobileprovision"), File.join(destination, "#{profile_uuid}.mobileprovision"))
+          project = Xcodeproj::Project.open('ios/Bellywise.xcodeproj')
+          targets = project.targets.select { |target| target.name == 'Bellywise' && target.product_type == 'com.apple.product-type.application' }
+          raise 'Expected exactly one Bellywise app target' unless targets.length == 1
+          target = targets.first
+          target.build_configurations.each do |configuration|
+            settings = configuration.build_settings
+            raise 'Unexpected bundle identifier' unless settings['PRODUCT_BUNDLE_IDENTIFIER'] == ENV.fetch('APP_BUNDLE_ID')
+            settings['DEVELOPMENT_TEAM'] = ENV.fetch('TEAM_ID')
+            settings['CODE_SIGN_STYLE'] = 'Manual'
+            settings['CODE_SIGN_IDENTITY[sdk=iphoneos*]'] = ENV.fetch('CERTIFICATE_SHA1')
+            settings['PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]'] = manifest.fetch('profileName')
+            settings['CURRENT_PROJECT_VERSION'] = ENV.fetch('BUILD_NUMBER')
+          end
+          project.root_object.attributes['TargetAttributes'] ||= {}
+          project.root_object.attributes['TargetAttributes'][target.uuid] ||= {}
+          project.root_object.attributes['TargetAttributes'][target.uuid]['ProvisioningStyle'] = 'Manual'
+          project.save
+          # Expo may write a literal CFBundleVersion rather than referring to the build setting.
+          info_path = 'ios/Bellywise/Info.plist'
+          info = Xcodeproj::Plist.read_from_path(info_path)
+          info['CFBundleVersion'] = ENV.fetch('BUILD_NUMBER')
+          Xcodeproj::Plist.write_to_path(info, info_path)
+          RUBY
+
+      - name: Archive and export signed IPA
+        id: archive
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -workspace ios/Bellywise.xcworkspace \
+            -scheme Bellywise \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Bellywise.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/Bellywise-device"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Bellywise.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/bellywise-signing/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/Bellywise-export"
+          python3 - <<'PY'
+          import glob, os
+          files = glob.glob(os.path.join(os.environ['RUNNER_TEMP'], 'Bellywise-export', '*.ipa'))
+          if len(files) != 1:
+              raise SystemExit('Expected exactly one exported IPA')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('ipa_path=' + files[0] + '\n')
+          PY
+
+      - name: Upload signed IPA artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bellywise-signed-IPA-${{ github.run_number }}
+          path: ${{ steps.archive.outputs.ipa_path }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload to TestFlight and wait for processing
+        uses: Apple-Actions/upload-testflight-build@v5
+        with:
+          app-path: ${{ steps.archive.outputs.ipa_path }}
+          issuer-id: ${{ secrets.APPSTORE_ISSUER_ID }}
+          api-key-id: ${{ secrets.APPSTORE_KEY_ID }}
+          api-private-key: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+          wait-for-processing: 'true'
+          release-notes: 'Try meal logging, editable label scans, custom symptoms, comfortable check-ins and pattern explanations. Please report confusing wording or incorrect ingredients. Do not change your diet or provoke symptoms to test this beta.'
+
+      - name: Remove temporary signing files
+        if: ${{ always() }}
+        working-directory: ${{ runner.temp }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, shutil
+          temporary_root = pathlib.Path(os.environ['RUNNER_TEMP']).resolve()
+          signing_folder = (temporary_root / 'bellywise-signing').resolve()
+          if signing_folder.parent != temporary_root:
+              raise SystemExit('Unexpected cleanup directory')
+          manifest_path = signing_folder / 'manifest.json'
+          if manifest_path.exists():
+              manifest = json.loads(manifest_path.read_text())
+              profile_uuid = manifest.get('profileUuid', '')
+              if profile_uuid and all(character in '0123456789abcdefABCDEF-' for character in profile_uuid):
+                  installed = pathlib.Path.home() / 'Library/MobileDevice/Provisioning Profiles' / (profile_uuid + '.mobileprovision')
+                  installed.unlink(missing_ok=True)
+          if signing_folder.exists():
+              shutil.rmtree(signing_folder)
+          PY
+          # import-codesign-certs performs its own temporary-keychain cleanup in its post step.

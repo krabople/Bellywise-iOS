@@ -1,0 +1,74 @@
+name: Bellywise checks
+
+on:
+  push:
+    paths:
+      - 'foodprint/**'
+      - 'scripts/ci/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'foodprint/**'
+      - 'scripts/ci/**'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bellywise-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: foodprint
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: foodprint/package-lock.json
+      - run: npm ci
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Domain and parser tests
+        run: npx tsx --test tests/*.test.ts
+      - name: Web bundle
+        run: npx expo export --platform web
+
+  ios-compile:
+    needs: app-checks
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: foodprint/package-lock.json
+      - name: Install dependencies
+        working-directory: foodprint
+        run: npm ci
+      - name: Compile iOS Simulator app
+        run: bash scripts/ci/build-ios.sh
+      - name: Keep build logs and simulator artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bellywise-ios-simulator
+          path: |
+            artifacts/*.log
+            artifacts/Bellywise-simulator.zip
+          if-no-files-found: warn
+          retention-days: 7

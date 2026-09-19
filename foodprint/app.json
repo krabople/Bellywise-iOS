@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "Bellywise",
+    "slug": "bellywise",
+    "version": "1.0.0",
+    "scheme": "bellywise",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "platforms": [
+      "ios",
+      "web"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.krabople.bellywise",
+      "buildNumber": "1",
+      "appleTeamId": "6YYA8L76Y8",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Photograph an ingredient list so Bellywise can help you log your food.",
+        "NSPhotoLibraryUsageDescription": "Choose an ingredient-label photo to read privately on this device."
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "name": "Bellywise — Food & Feelings"
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Photograph an ingredient list so Bellywise can help you log your food.",
+          "photosPermission": "Choose an ingredient-label photo to read privately on this device.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-sharing",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.4",
+            "usePrecompiledModules": false
+          }
+        }
+      ],
+      "@react-native-community/datetimepicker"
+    ]
+  }
+}
