@@ -12,6 +12,8 @@ The initial [signing run 35440815207](https://github.com/krabople/Lifetwine/acti
 
 The owner's internal beta group and beta review metadata are saved in App Store Connect. External tester setup remains pending the first uploaded build and any required Apple beta review. No tester email or review contact details are stored in this repository or public build logs.
 
+The first submission omits `ITSAppUsesNonExemptEncryption` so App Store Connect presents its export-compliance questions. SQLCipher is not assumed to qualify solely because its encryption is standard or its provider uses CommonCrypto. The app's classification must come from the actual questionnaire and applicable distribution scope. [Apple key documentation](https://developer.apple.com/documentation/bundleresources/information-property-list/itsappusesnonexemptencryption)
+
 [Run 35442820274](https://github.com/krabople/Lifetwine/actions/runs/35442820274), source `ea863a3`, passed all 60 automated tests, compiled the Release simulator app and verified its ad-hoc Keychain signature. The simulator then reported `Data Migration Failed` during boot and denied the app launch. The stricter gate correctly blocked archiving/upload. The captured screen shows the simulator home screen, not a working app. A fresh-device boot/recovery path is being added; the app's storage protections remain unchanged.
 
 ## Prepared workflow revision
