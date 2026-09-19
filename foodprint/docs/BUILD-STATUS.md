@@ -1,6 +1,6 @@
 # Bellywise build and distribution status
 
-Snapshot: 19 September 2026. This document records observed states; it is not a claim that TestFlight distribution has finished.
+Snapshot: 19 September 2026. Build 7 is available to the internal beta group and is waiting for Apple's first external Beta App Review. The configured external tester is assigned to the external group; Apple will send the email automatically when that build becomes installable.
 
 ## Repository and CI arrangement
 
@@ -10,9 +10,17 @@ The initial [signing run 35440815207](https://github.com/krabople/Lifetwine/acti
 
 [Run 35441642571](https://github.com/krabople/Lifetwine/actions/runs/35441642571), source `acd8754`, compiled the Release simulator app. Visual inspection found a Keychain entitlement error on its storage-error screen, although the process-only smoke check had passed. This was an unsigned simulator build. The run was cancelled during device archiving, before upload or distribution. A corrected simulator signing and screen-verification check is being prepared; no TestFlight-ready claim is made for this run.
 
-The owner's internal beta group and beta review metadata are saved in App Store Connect. External tester setup remains pending the first uploaded build and any required Apple beta review. No tester email or review contact details are stored in this repository or public build logs.
+The owner's internal beta group and beta review metadata are saved in App Store Connect. No tester email or review contact details are stored in this repository or public build logs.
 
-The first submission omits `ITSAppUsesNonExemptEncryption` so App Store Connect presents its export-compliance questions. SQLCipher is not assumed to qualify solely because its encryption is standard or its provider uses CommonCrypto. The app's classification must come from the actual questionnaire and applicable distribution scope. [Apple key documentation](https://developer.apple.com/documentation/bundleresources/information-property-list/itsappusesnonexemptencryption)
+The first submission omitted `ITSAppUsesNonExemptEncryption` so App Store Connect presented its export-compliance questions. The questionnaire recorded Bellywise's standard encryption and current non-France distribution scope; Apple cleared the build's missing-compliance state. Revisit the answers if encryption or distribution scope changes. [Apple key documentation](https://developer.apple.com/documentation/bundleresources/information-property-list/itsappusesnonexemptencryption)
+
+## Completed build and current TestFlight state
+
+[Run 35446283297](https://github.com/krabople/Lifetwine/actions/runs/35446283297), source `a02cf11`, completed successfully. It passed the JavaScript, analysis, signing and native simulator gates; launched the Xcode-built Release app; confirmed the welcome screen and primary action from the simulator screenshot; created and verified the signed device archive; uploaded the IPA; and waited for Apple processing.
+
+Apple returned build ID `a452b284-2e07-4a4c-9a23-13523d897734`, version `1.0.0` build `7`, with `processingState=VALID`. The signed archive matched bundle `com.krabople.bellywise`, team `6YYA8L76Y8` and application identifier `6YYA8L76Y8.com.krabople.bellywise`. The build is assigned to the internal `Bellywise beta` group.
+
+The external `Bellywise external beta` group is associated with build 7. [Administration run 35448434186](https://github.com/krabople/Lifetwine/actions/runs/35448434186), source `e566684`, verified `autoNotifyEnabled=true`, `externalBuildState=WAITING_FOR_BETA_REVIEW` and `betaReviewState=WAITING_FOR_REVIEW`. It also verified that the email-based tester is assigned to the external group. Apple rejected an immediate invitation while there was no installable external build, so the email is deferred until Beta App Review approves build 7; automatic notification is enabled for that transition.
 
 [Run 35442820274](https://github.com/krabople/Lifetwine/actions/runs/35442820274), source `ea863a3`, passed all 60 automated tests, compiled the Release simulator app and verified its ad-hoc Keychain signature. The simulator then reported `Data Migration Failed` during boot and denied the app launch. The stricter gate correctly blocked archiving/upload. The captured screen shows the simulator home screen, not a working app. A fresh-device boot/recovery path is being added; the app's storage protections remain unchanged.
 
@@ -38,4 +46,4 @@ The native verification artifact allows only the captured welcome/failure screen
 
 Offline tests cover Apple JWT signatures, credential-origin protection, certificate/profile matching, exact-build selection, failed processing and polling timeout. They require no real Apple secrets and do not call Apple. Native compilation and screenshots require the macOS runner; local Windows checks must not be described as an iOS build.
 
-Update this status with the final run link, source commit, archive/upload outcome, Apple build ID and observed processing/tester availability after the next workflow completes.
+Update this status when Beta App Review changes from `WAITING_FOR_REVIEW`, or if Apple reports an external-review issue.
