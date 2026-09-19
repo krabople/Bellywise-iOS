@@ -98,16 +98,18 @@ class SimulatorTests(unittest.TestCase):
 
     @patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'})
     @patch.object(module.time, 'sleep')
-    def test_launch_denial_collects_diagnostics_then_reboots(self, _sleep):
+    def test_launch_denial_after_healthy_boot_captures_diagnostics_and_stops(self, _sleep):
         denial = 'FBSOpenApplicationServiceErrorDomain: The request was denied by service delegate (SBMainWorkspace).'
         session, commands, created = self.scenario([(0, FINISHED)] * 2, [(1, denial), (0, BUNDLE + ': 12345')])
         diagnostics = []
         session.diagnose = lambda name: diagnostics.append(name)
-        session.start('/compiled/Bellywise.app', '26.5')
+        with self.assertRaisesRegex(RuntimeError, 'same compiled app will not be retried'):
+            session.start('/compiled/Bellywise.app', '26.5')
         self.assertEqual(len(created), 1)
         self.assertEqual(len(diagnostics), 1)
-        self.assertEqual(session.state['pid'], 12345)
-        self.assertEqual(len([c for c in commands if c[0] == 'install']), 2)
+        self.assertIsNone(session.state['pid'])
+        self.assertEqual(len([c for c in commands if c[0] == 'install']), 1)
+        self.assertEqual(len([c for c in commands if c[0] == 'launch']), 1)
 
     def test_launch_failure_diagnostics_do_not_require_app_pid(self):
         session, commands, _created = self.scenario([])
@@ -136,6 +138,68 @@ class SimulatorTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'restricted to GitHub Actions'):
             session.start('/compiled/Bellywise.app', '26.5')
         self.assertEqual(commands, [])
+
+    def test_ips_header_and_body_preserve_exact_exception_and_termination(self):
+        header = {'bug_type': '309', 'bundleID': BUNDLE, 'incident_id': 'incident-123'}
+        body = {'procName': 'Bellywise', 'pid': 44, 'captureTime': '2026-09-19 13:00:00 +0000',
+                'exception': {'type': 'EXC_BAD_ACCESS', 'signal': 'SIGKILL (Code Signature Invalid)'},
+                'termination': {'namespace': 'CODESIGNING', 'code': 2, 'indicator': 'Invalid Page'},
+                'asi': {'dyld': ['Library not loaded: exact diagnostic reason']},
+                'threads': [{'unneeded': 'private bulky backtrace'}], 'crashReporterKey': 'omit-hardware-key'}
+        details = module.crash_details(json.dumps(header) + '\n' + json.dumps(body, indent=2), BUNDLE)
+        self.assertEqual(details['exception'], body['exception'])
+        self.assertEqual(details['termination'], body['termination'])
+        self.assertEqual(details['asi'], body['asi'])
+        self.assertEqual(details['incident'], 'incident-123')
+        self.assertNotIn('threads', details)
+        self.assertNotIn('crashReporterKey', details)
+
+    def test_ips_early_loader_crash_without_bundle_info_is_not_lost(self):
+        raw = json.dumps({'bug_type': 309, 'app_name': 'Bellywise'}) + '\n' + json.dumps({'procName': 'Bellywise', 'termination': {'namespace': 'DYLD', 'code': 1}})
+        self.assertEqual(module.crash_details(raw, BUNDLE)['termination']['namespace'], 'DYLD')
+
+    def test_ips_rejects_wrong_app_noncrash_and_malformed_reports(self):
+        body = json.dumps({'procName': 'Bellywise'})
+        self.assertIsNone(module.crash_details(json.dumps({'bug_type': 288, 'bundleID': BUNDLE}) + '\n' + body, BUNDLE))
+        self.assertIsNone(module.crash_details(json.dumps({'bug_type': 309, 'bundleID': 'different.app'}) + '\n' + body, BUNDLE))
+        self.assertIsNone(module.crash_details(json.dumps({'bug_type': 309}) + '\n' + json.dumps({'procName': 'Other'}), BUNDLE))
+        with self.assertRaises(ValueError):
+            module.crash_details('{not JSON}', BUNDLE)
+
+    def test_application_filter_excludes_log_queries_and_unrelated_entitlement_noise(self):
+        critical = 'SpringBoard[111] ' + BUNDLE + ' launch failed: signature invalid'
+        lines = [critical,
+                 'backboardd[2] com.apple.Photos entitlements:0x0',
+                 'neagent[2] Failed to find ' + BUNDLE + ' in LaunchServices',
+                 'log run noninteractively: --predicate ' + BUNDLE + ' AND error',
+                 'ReportCrash[2] ' + BUNDLE + ' is not a MetricKit client',
+                 'Bellywise[44] dyld: Library not loaded: exact missing dependency']
+        self.assertEqual(module.application_error_lines('\n'.join(lines), BUNDLE), [critical, lines[-1]])
+
+    def test_simulator_and_host_lines_have_independent_budgets(self):
+        simulator = '\n'.join(f'SpringBoard[1] {BUNDLE} error {i}' for i in range(30))
+        host = '\n'.join(f'CoreSimulator[1] {BUNDLE} error {i}' for i in range(50))
+        self.assertEqual(len(module.application_error_lines(simulator, BUNDLE)), 12)
+        self.assertEqual(len(module.application_error_lines(host, BUNDLE)), 12)
+        self.assertIn('error 29', module.application_error_lines(simulator, BUNDLE)[-1])
+
+    def test_crash_collection_excludes_old_and_other_app_reports(self):
+        session, _commands, _created = self.scenario([])
+        messages = []
+        session.report = messages.append
+        session.state['launchStarted'] = 1000
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            reports = home / 'Library/Logs/DiagnosticReports'
+            reports.mkdir(parents=True)
+            for name, timestamp, bundle in [('Bellywise-old.ips', 900, BUNDLE), ('Bellywise-fresh.ips', 1001, BUNDLE), ('Bellywise-other.ips', 1001, 'other.app')]:
+                path = reports / name
+                path.write_text(json.dumps({'bug_type': 309, 'bundleID': bundle}) + '\n' + json.dumps({'procName': 'Bellywise', 'exception': {'type': 'EXC_CRASH'}, 'termination': {'namespace': 'DYLD', 'code': 1}}))
+                os.utime(path, (timestamp, timestamp))
+            with patch.object(module.Path, 'home', return_value=home):
+                found = session.crash_reports('test')
+        self.assertEqual([d['file'] for d in found], ['Bellywise-fresh.ips'])
+        self.assertTrue(any('CRASH termination:' in line and 'DYLD' in line for line in messages))
 
 
 if __name__ == '__main__':

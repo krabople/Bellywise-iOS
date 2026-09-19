@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Simulator compilation, ad-hoc signing and verified welcome screen. Run on macOS CI.
+# Xcode simulator compilation, embedded entitlements and verified welcome screen.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 APP_DIR="$REPO_DIR/foodprint"
@@ -71,12 +71,14 @@ SCHEME="$(basename "$WORKSPACE" .xcworkspace)"
 xcrun --sdk macosx swiftc -swift-version 5 "$SCRIPT_DIR/read-simulator-screen.swift" -o "$ARTIFACT_DIR/read-simulator-screen"
 node --test "$APP_DIR/tests/native-screen.test.mjs"
 python3 "$APP_DIR/tests/test_simulator_session.py"
+python3 "$APP_DIR/tests/test_simulator_entitlements.py"
 SIMULATOR_ARCH="$(uname -m)"
 if [[ "$SIMULATOR_ARCH" != 'arm64' && "$SIMULATOR_ARCH" != 'x86_64' ]]; then
   echo "Unsupported simulator host architecture: $SIMULATOR_ARCH" >&2
   exit 1
 fi
-xcodebuild \
+echo 'Compiling the Release simulator app with Xcode local signing...'
+if xcodebuild \
   -workspace "$WORKSPACE" \
   -scheme "$SCHEME" \
   -configuration Release \
@@ -85,9 +87,15 @@ xcodebuild \
   -derivedDataPath "$BUILD_DIR" \
   ARCHS="$SIMULATOR_ARCH" \
   ONLY_ACTIVE_ARCH=YES \
-  CODE_SIGNING_ALLOWED=NO \
-  CODE_SIGNING_REQUIRED=NO \
-  build 2>&1 | tee "$ARTIFACT_DIR/ios-build.log"
+  CODE_SIGNING_ALLOWED=YES \
+  CODE_SIGN_IDENTITY=- \
+  build > "$ARTIFACT_DIR/ios-build.log" 2>&1; then
+  echo 'Release simulator compilation succeeded.'
+else
+  result=$?
+  tail -n 100 "$ARTIFACT_DIR/ios-build.log"
+  exit "$result"
+fi
 
 SIMULATOR_APP="$(find "$BUILD_DIR/Build/Products/Release-iphonesimulator" -maxdepth 1 -type d -name '*.app' -print -quit)"
 if [[ -z "$SIMULATOR_APP" ]]; then
@@ -96,43 +104,13 @@ if [[ -z "$SIMULATOR_APP" ]]; then
 fi
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$SIMULATOR_APP/Info.plist")"
 APP_PROCESS="$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$SIMULATOR_APP/Info.plist")"
-# Unsigned apps can launch but have no default Keychain access group. Sign only the
-# simulator product with its own ad-hoc identity; never alter the device archive/project.
-python3 - "$APP_DIR/app.json" "$BUNDLE_ID" "$ARTIFACT_DIR/simulator-entitlements.plist" <<'PY'
-import json, os, plistlib, re, sys
-config = json.load(open(sys.argv[1]))['expo']['ios']
-team = os.environ.get('TEAM_ID') or config.get('appleTeamId', '')
-bundle = sys.argv[2]
-if not re.fullmatch(r'[A-Z0-9]{10}', team):
-    sys.exit('A valid configured team ID is required for the simulator Keychain identity.')
-if bundle != config.get('bundleIdentifier') or not re.fullmatch(r'[A-Za-z0-9.-]+', bundle):
-    sys.exit('Simulator bundle identifier does not match the app configuration.')
-app_id = team + '.' + bundle
-entitlements = {
-    'application-identifier': app_id,
-    'com.apple.developer.team-identifier': team,
-    'keychain-access-groups': [app_id],
-}
-with open(sys.argv[3], 'wb') as output:
-    plistlib.dump(entitlements, output, fmt=plistlib.FMT_XML)
-PY
-# Sign nested code inside-out, without passing the main app's entitlements to libraries.
-while IFS= read -r -d '' nested_code; do
-  codesign --force --sign - --timestamp=none "$nested_code"
-done < <(find "$SIMULATOR_APP" -depth \( -name '*.dylib' -o -name '*.framework' \) -print0)
-codesign --force --sign - --timestamp=none --generate-entitlement-der \
-  --entitlements "$ARTIFACT_DIR/simulator-entitlements.plist" "$SIMULATOR_APP"
+# Let Xcode place iOS simulator entitlements in __TEXT,__entitlements. Injecting
+# them into a macOS ad-hoc code signature is not equivalent and can deny launch.
+# Do not rewrite Xcode's signatures or any generated device signing settings.
 codesign --verify --deep --strict "$SIMULATOR_APP"
-codesign --display --entitlements - --xml "$SIMULATOR_APP" > "$ARTIFACT_DIR/simulator-signed-entitlements.plist" 2> "$ARTIFACT_DIR/simulator-signing.log"
-python3 - "$ARTIFACT_DIR/simulator-entitlements.plist" "$ARTIFACT_DIR/simulator-signed-entitlements.plist" <<'PY'
-import plistlib, sys
-expected = plistlib.load(open(sys.argv[1], 'rb'))
-actual = plistlib.load(open(sys.argv[2], 'rb'))
-for key, value in expected.items():
-    if actual.get(key) != value:
-        sys.exit('Simulator signature is missing or changed entitlement: ' + key)
-print('Verified the simulator application identity and private Keychain access group.')
-PY
+SIMULATOR_TEAM="${TEAM_ID:-$(node -p "require('./app.json').expo.ios.appleTeamId")}"
+python3 "$SCRIPT_DIR/verify-simulator-entitlements.py" \
+  --binary "$SIMULATOR_APP/$APP_PROCESS" --bundle-id "$BUNDLE_ID" --team-id "$SIMULATOR_TEAM"
 if [[ "${SKIP_IOS_SETUP:-0}" != '1' ]]; then
   # Standalone private CI keeps the simulator app; the public release job must not.
   ditto -c -k --sequesterRsrc --keepParent "$SIMULATOR_APP" "$ARTIFACT_DIR/Bellywise-simulator.zip"
@@ -208,4 +186,4 @@ if grep -Eiq 'Unhandled JS Exception|Invariant Violation|RCTFatal|No bundle URL 
   exit 1
 fi
 printf 'PASS: %s remained alive as process %s after verified welcome rendering.\nScreenshot: Bellywise-native-welcome.png\n' "$BUNDLE_ID" "$APP_PID" | tee -a "$ARTIFACT_DIR/native-smoke.log"
-echo "Ad-hoc signed simulator build and welcome verification completed. This artifact is not a TestFlight archive."
+echo "Xcode-signed simulator build and welcome verification completed. This artifact is not a TestFlight archive."

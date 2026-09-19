@@ -231,13 +231,21 @@ jobs:
         id: archive
         run: |
           set -euo pipefail
-          xcodebuild archive \
+          echo 'Archiving the signed device app...'
+          if xcodebuild archive \
             -workspace ios/Bellywise.xcworkspace \
             -scheme Bellywise \
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/Bellywise.xcarchive" \
-            -derivedDataPath "$RUNNER_TEMP/Bellywise-device"
+            -derivedDataPath "$RUNNER_TEMP/Bellywise-device" \
+            > "$RUNNER_TEMP/Bellywise-archive.log" 2>&1; then
+            echo 'Device archive succeeded.'
+          else
+            result=$?
+            tail -n 100 "$RUNNER_TEMP/Bellywise-archive.log"
+            exit "$result"
+          fi
           python3 scripts/ci/verify-ios-signing.py \
             --app "$RUNNER_TEMP/Bellywise.xcarchive/Products/Applications/Bellywise.app" \
             --bundle-id "$APP_BUNDLE_ID" \
