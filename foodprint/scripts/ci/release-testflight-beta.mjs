@@ -53,10 +53,10 @@ export async function releaseExternalBeta({ api, appId, buildId, groupId, tester
     data: { type: 'buildBetaDetails', id: betaDetailId, attributes: { autoNotifyEnabled: true } },
   });
 
-  const existingBuildGroups = await api.request(`/v1/builds/${encodeURIComponent(buildId)}/relationships/betaGroups?limit=200`);
-  if (!existingBuildGroups.data?.some((item) => item.id === groupId)) {
-    await api.request(`/v1/builds/${encodeURIComponent(buildId)}/relationships/betaGroups`, 'POST', {
-      data: [linkage('betaGroups', groupId)],
+  const existingGroupBuilds = await api.request(`/v1/betaGroups/${encodeURIComponent(groupId)}/relationships/builds?limit=200`);
+  if (!existingGroupBuilds.data?.some((item) => item.id === buildId)) {
+    await api.request(`/v1/betaGroups/${encodeURIComponent(groupId)}/relationships/builds`, 'POST', {
+      data: [linkage('builds', buildId)],
     });
   }
 
