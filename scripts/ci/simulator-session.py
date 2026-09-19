@@ -184,9 +184,10 @@ class Session:
             for line in migration[-8:]:
                 self.report(line[:1800])
         # Unified-log collection allows ReportCrash time to finish writing its JSON.
-        self.crash_reports(name)
+        crashes = self.crash_reports(name)
         self.simctl('io', device, 'screenshot', '--type=png', str(self.directory / 'Bellywise-startup-failure.png'), name=name + '-screenshot', timeout=20)
         self.simctl('spawn', device, 'launchctl', 'list', name=name + '-processes', timeout=20)
+        return crashes
 
     def cleanup(self):
         # IDs are recorded immediately from `create`; never erase/reuse/delete user devices.
@@ -245,18 +246,27 @@ class Session:
                     continue
                 self.state.update(phase='launch', launchStarted=time.time())
                 self.save()
-                code, output = self.simctl('launch', '--terminate-running-process',
-                    '--stdout=' + str(self.directory / 'app-stdout.log'), '--stderr=' + str(self.directory / 'app-stderr.log'),
-                    device, self.bundle, name='app-launch', timeout=45)
-                pid = launch_pid(code, output, self.bundle)
-                if pid:
-                    self.state['pid'] = pid
-                    self.save()
-                    self.report(f'LAUNCHED: {self.bundle}, process {pid}. Welcome verification still required.')
-                    return
-                self.report('LAUNCH FAILURE AFTER HEALTHY BOOT: ' + output.strip()[:1500])
-                self.diagnose(tag)
-                raise RuntimeError('The app failed to launch after a confirmed healthy simulator boot. Diagnostics captured; the same compiled app will not be retried. Welcome verification did not pass.')
+                for launch_attempt in (1, 2):
+                    # A new simulator has no earlier app process to terminate. The
+                    # termination request itself can stall CoreSimulatorBridge.
+                    code, output = self.simctl('launch',
+                        '--stdout=' + str(self.directory / 'app-stdout.log'), '--stderr=' + str(self.directory / 'app-stderr.log'),
+                        device, self.bundle, name=f'app-launch-{launch_attempt}', timeout=120)
+                    pid = launch_pid(code, output, self.bundle)
+                    if pid:
+                        self.state['pid'] = pid
+                        self.save()
+                        self.report(f'LAUNCHED: {self.bundle}, process {pid}. Welcome verification still required.')
+                        return
+                    self.report('LAUNCH FAILURE AFTER HEALTHY BOOT: ' + output.strip()[:1500])
+                    crashes = self.diagnose(f'{tag}-launch-{launch_attempt}')
+                    denied = re.search(r'request was denied|RequestDenied|SBMainWorkspace|Code Signature Invalid|Namespace CODESIGNING', output, re.I)
+                    if code == 124 and launch_attempt == 1 and crashes == [] and not denied:
+                        # The first request may have started the app despite simctl
+                        # timing out. A second non-terminating launch retrieves its PID.
+                        self.report('RETRY: cold launch timed out without an app crash; retrying the same non-terminating launch once.')
+                        continue
+                    raise RuntimeError('The app failed to launch after a confirmed healthy simulator boot. Diagnostics captured; the same compiled app will not be retried. Welcome verification did not pass.')
             self.simctl('shutdown', device, name=f'simulator-retire-{fresh_attempt}', timeout=30)
         raise RuntimeError('Simulator failed to boot/install/launch after two fresh devices and one reboot each. No application verification passed.')
 

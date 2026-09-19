@@ -71,7 +71,7 @@ class SimulatorTests(unittest.TestCase):
             return 0, ''
 
         session.simctl = simctl
-        session.diagnose = lambda name='final': None
+        session.diagnose = lambda name='final': []
         session.report = lambda message: None
         return session, commands, created
 
@@ -110,6 +110,58 @@ class SimulatorTests(unittest.TestCase):
         self.assertIsNone(session.state['pid'])
         self.assertEqual(len([c for c in commands if c[0] == 'install']), 1)
         self.assertEqual(len([c for c in commands if c[0] == 'launch']), 1)
+
+    @patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'})
+    @patch.object(module.time, 'sleep')
+    def test_cold_launch_timeout_without_crash_retries_once_without_termination(self, _sleep):
+        session, commands, created = self.scenario([(0, FINISHED)], [(124, 'Command timed out after 120s.'), (0, BUNDLE + ': 4321')])
+        session.start('/compiled/Bellywise.app', '26.5')
+        launches = [c for c in commands if c[0] == 'launch']
+        self.assertEqual(len(launches), 2)
+        self.assertFalse(any('--terminate-running-process' in c for c in launches))
+        self.assertEqual(session.state['pid'], 4321)
+        self.assertEqual(len(created), 1)
+        self.assertEqual(len([c for c in commands if c[0] == 'install']), 1)
+
+    @patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'})
+    @patch.object(module.time, 'sleep')
+    def test_second_cold_launch_timeout_is_final(self, _sleep):
+        session, commands, created = self.scenario([(0, FINISHED)], [(124, 'timed out')] * 2)
+        with self.assertRaisesRegex(RuntimeError, 'will not be retried'):
+            session.start('/compiled/Bellywise.app', '26.5')
+        self.assertEqual(len([c for c in commands if c[0] == 'launch']), 2)
+        self.assertEqual(len(created), 1)
+
+    @patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'})
+    @patch.object(module.time, 'sleep')
+    def test_timeout_with_crash_report_is_not_retried(self, _sleep):
+        session, commands, _created = self.scenario([(0, FINISHED)], [(124, 'timed out')])
+        session.diagnose = lambda name: [{'termination': {'namespace': 'CODESIGNING'}}]
+        with self.assertRaisesRegex(RuntimeError, 'will not be retried'):
+            session.start('/compiled/Bellywise.app', '26.5')
+        self.assertEqual(len([c for c in commands if c[0] == 'launch']), 1)
+
+    @patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'})
+    @patch.object(module.time, 'sleep')
+    def test_timeout_with_explicit_launch_denial_is_not_retried(self, _sleep):
+        session, commands, _created = self.scenario([(0, FINISHED)], [(124, 'The request was denied by service delegate (SBMainWorkspace).')])
+        with self.assertRaisesRegex(RuntimeError, 'will not be retried'):
+            session.start('/compiled/Bellywise.app', '26.5')
+        self.assertEqual(len([c for c in commands if c[0] == 'launch']), 1)
+
+    @patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'})
+    @patch.object(module.time, 'sleep')
+    def test_launch_uses_120_second_cold_start_budget(self, _sleep):
+        session, _commands, _created = self.scenario([(0, FINISHED)])
+        original = session.simctl
+        budgets = []
+        def capture(*args, name, timeout=45):
+            if args[0] == 'launch':
+                budgets.append(timeout)
+            return original(*args, name=name, timeout=timeout)
+        session.simctl = capture
+        session.start('/compiled/Bellywise.app', '26.5')
+        self.assertEqual(budgets, [120])
 
     def test_launch_failure_diagnostics_do_not_require_app_pid(self):
         session, commands, _created = self.scenario([])
