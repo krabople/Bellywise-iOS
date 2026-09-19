@@ -11,7 +11,8 @@ cd foodprint
 npm ci
 npm run typecheck
 npm test
-node --test tests/apple-setup.test.mjs
+node --test tests/*.test.mjs
+python3 tests/test_ios_signing.py
 npm run web
 ```
 

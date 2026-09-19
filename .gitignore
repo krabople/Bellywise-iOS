@@ -15,3 +15,5 @@ credentials/
 foodprint/ios/
 foodprint/android/
 artifacts/
+__pycache__/
+*.pyc

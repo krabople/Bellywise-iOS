@@ -21,7 +21,7 @@ concurrency:
 jobs:
   release:
     runs-on: macos-26
-    timeout-minutes: 90
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash
@@ -96,7 +96,8 @@ jobs:
           npm ci
           npm run typecheck
           npm test
-          node --test tests/apple-setup.test.mjs tests/verify-testflight.test.mjs
+          node --test tests/*.test.mjs
+          python3 tests/test_ios_signing.py
 
       - name: Generate iOS project
         run: |
@@ -237,6 +238,11 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/Bellywise.xcarchive" \
             -derivedDataPath "$RUNNER_TEMP/Bellywise-device"
+          python3 scripts/ci/verify-ios-signing.py \
+            --app "$RUNNER_TEMP/Bellywise.xcarchive/Products/Applications/Bellywise.app" \
+            --bundle-id "$APP_BUNDLE_ID" \
+            --team-id "$TEAM_ID" \
+            --output "$RUNNER_TEMP/Bellywise-signing-verification.json"
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/Bellywise.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/bellywise-signing/ExportOptions.plist" \
@@ -277,7 +283,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: Bellywise-processing-${{ github.run_number }}
-          path: ${{ runner.temp }}/Bellywise-processing.json
+          path: |
+            ${{ runner.temp }}/Bellywise-processing.json
+            ${{ runner.temp }}/Bellywise-signing-verification.json
           if-no-files-found: ignore
           retention-days: 7
 
