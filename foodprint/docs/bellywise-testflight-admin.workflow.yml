@@ -1,0 +1,64 @@
+# Install this workflow in krabople/Lifetwine/.github/workflows/bellywise-testflight-admin.yml.
+# It uses the existing App Store Connect credentials and keeps the tester email in a repository secret.
+name: Bellywise TestFlight administration
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Bellywise source commit SHA, tag or branch
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bellywise-testflight-admin
+  cancel-in-progress: false
+
+jobs:
+  release-external-beta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+        working-directory: source/foodprint
+    steps:
+      - name: Check out exact Bellywise source
+        uses: actions/checkout@v7
+        with:
+          repository: krabople/Bellywise-iOS
+          ref: ${{ inputs.ref }}
+          path: source
+          ssh-key: ${{ secrets.BELLYWISE_SOURCE_DEPLOY_KEY }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Submit external beta and invite configured tester
+        env:
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+          TESTFLIGHT_TESTER_EMAIL: ${{ secrets.BELLYWISE_EXTERNAL_TESTER_EMAIL }}
+          APPSTORE_APP_ID: '6813854695'
+          APPSTORE_BUILD_ID: a452b284-2e07-4a4c-9a23-13523d897734
+          APPSTORE_EXTERNAL_GROUP_ID: df15b1e6-e7b2-483e-aec3-3011b451dbdc
+        run: |
+          set -euo pipefail
+          node scripts/ci/release-testflight-beta.mjs --output "$RUNNER_TEMP/Bellywise-external-beta.json"
+
+      - name: Keep non-sensitive TestFlight verification
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bellywise-external-beta-${{ github.run_number }}
+          path: ${{ runner.temp }}/Bellywise-external-beta.json
+          if-no-files-found: ignore
+          retention-days: 7
