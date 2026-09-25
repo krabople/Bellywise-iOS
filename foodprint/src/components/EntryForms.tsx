@@ -45,6 +45,7 @@ export function MealForm({ initial, selectedDay, customIngredients = [], onAddCu
   const [confirmed, setConfirmed] = useState(!!initial);
   const [deleteCheck, setDeleteCheck] = useState(false);
   const [barcode, setBarcode] = useState('');
+  const [barcodeNeedsLabel, setBarcodeNeedsLabel] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [ingredientInfoId, setIngredientInfoId] = useState<string | null>(null);
   const [pendingIngredient, setPendingIngredient] = useState('');
@@ -54,14 +55,18 @@ export function MealForm({ initial, selectedDay, customIngredients = [], onAddCu
   const personalCatalog = useMemo(() => customIngredients.map(item => ({ ...item })), [customIngredients]);
   const currentOperation = useRef(0);
   const scanLock = useRef(false);
-  const resetReview = () => { setReview(false); setConfirmed(false); setError(''); setWarnings([]); setScannerOpen(false); setCatalogProduct(false); scanLock.current = false; };
+  const resetReview = () => { setReview(false); setConfirmed(false); setError(''); setWarnings([]); setScannerOpen(false); setCatalogProduct(false); setBarcodeNeedsLabel(false); scanLock.current = false; };
   const showTyped = () => { setIngredients(resolution.ingredients); setReview(true); setWarnings(resolution.matched ? [] : ['This food or drink is not in the offline recipe guide. Add its ingredients, or save the entry without ingredient assumptions.']); setSource('typed'); setConfirmed(false); };
   const parseLabel = (text = label, confidence?: number, product?: CatalogProduct) => {
     const parsed = parseIngredientLabel(text, { source: product ? 'catalog' : 'ocr', ocrConfidence: confidence, customIngredients: personalCatalog });
     const allergens = [...new Set([...parsed.allergens, ...(product?.allergens ?? [])])];
     const traces = [...new Set([...parsed.mayContain, ...(product?.traces ?? [])])];
     setWarnings([...parsed.warnings, ...(product?.warnings ?? []), ...(allergens.length ? [`Allergen statement (separate from ingredients): ${allergens.join(', ')}.`] : []), ...(traces.length ? [`May contain: ${traces.join(', ')}. This is a trace warning, not confirmed consumption.`] : [])]);
-    if (!parsed.ingredients.length) { setError('No clear run of catalogue ingredients was found. Retake the photo closer to the list, or review and add the ingredients manually.'); setReview(false); return; }
+    if (!parsed.ingredients.length) {
+      if (product) { setMode('barcode'); setCatalogProduct(false); setBarcodeNeedsLabel(true); setError(''); }
+      else setError('No clear run of catalogue ingredients was found. Retake the photo closer to the list, or review and add the ingredients manually.');
+      setReview(false); return;
+    }
     setError(''); setIngredients(ingredientsFromNames(expandIngredientNames(parsed.ingredients), 'inferred', personalCatalog)); setSource('label'); setReview(true); setConfirmed(false);
   };
   const scan = async (camera: boolean) => {
@@ -89,15 +94,16 @@ export function MealForm({ initial, selectedDay, customIngredients = [], onAddCu
   };
   const chooseProduct = (p: CatalogProduct) => {
     setName(p.name); setNotes([p.brands, `Product data: ${p.sourceUrl}`, 'Open Food Facts · ODbL'].filter(Boolean).join('\n'));
-    setLabel(p.ingredientsText || ''); setMode('scan'); setCatalogProduct(true); setProducts([]); setScannerOpen(false);
+    setLabel(p.ingredientsText || ''); setCatalogProduct(true); setBarcodeNeedsLabel(false); setProducts([]); setScannerOpen(false);
     if (p.ingredients.length) {
+      setMode('scan');
       const allergens = [...new Set(p.allergens)];
       const traces = [...new Set(p.traces)];
       setIngredients(ingredientsFromNames(p.ingredients.map(item => item.name), 'inferred', personalCatalog));
       setWarnings([...p.warnings, ...(allergens.length ? [`Allergen statement (separate from ingredients): ${allergens.join(', ')}.`] : []), ...(traces.length ? [`May contain: ${traces.join(', ')}. This is a trace warning, not confirmed consumption.`] : [])]);
       setSource('label'); setReview(true); setConfirmed(false); setError('');
-    } else if (p.ingredientsText) parseLabel(p.ingredientsText, undefined, p);
-    else { scanLock.current = false; setWarnings(p.warnings); setError('This product has no ingredients in the catalogue. Scan its label or enter ingredients yourself.'); setReview(false); }
+    } else if (p.ingredientsText) { setMode('scan'); parseLabel(p.ingredientsText, undefined, p); }
+    else { scanLock.current = false; setMode('barcode'); setCatalogProduct(false); setBarcodeNeedsLabel(true); setWarnings(p.warnings); setError(''); setReview(false); }
   };
   const findBarcode = async (raw: string, fromCamera = false) => {
     const code = raw.replace(/[^0-9]/g, '');
@@ -106,11 +112,11 @@ export function MealForm({ initial, selectedDay, customIngredients = [], onAddCu
     scanLock.current = true;
     if (fromCamera) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const operation = ++currentOperation.current;
-    setBusy(true); setError(''); setWarnings([]);
+    setBusy(true); setError(''); setWarnings([]); setBarcodeNeedsLabel(false);
     try {
       const product = await lookupBarcode(code);
       if (operation !== currentOperation.current) return;
-      if (!product) { setError('That barcode is not in the product catalogue. Scan the ingredients panel or log the product manually.'); scanLock.current = false; return; }
+      if (!product) { setScannerOpen(false); setBarcodeNeedsLabel(true); setError(''); scanLock.current = false; return; }
       chooseProduct(product);
     } catch (e) {
       if (operation === currentOperation.current) setError(e instanceof Error ? e.message : 'The barcode could not be looked up.');
@@ -125,6 +131,8 @@ export function MealForm({ initial, selectedDay, customIngredients = [], onAddCu
     setScannerOpen(true);
   };
   const onBarcodeScanned = (result: BarcodeScanningResult) => { void findBarcode(result.data, true); };
+  const photographMissingBarcodeLabel = () => { setMode('scan'); setCatalogProduct(false); setBarcodeNeedsLabel(false); setError(''); void scan(true); };
+  const enterMissingBarcodeIngredients = () => { setMode('type'); setCatalogProduct(false); setBarcodeNeedsLabel(false); setIngredients([]); setSource('typed'); setReview(true); setConfirmed(false); setError(''); };
   const addIngredientRecord = (record: { id: string; name: string }) => {
     setIngredients(items => [...items.filter(item => item.id !== record.id), { id: record.id, name: record.name, confidence: 'confirmed' }]);
     setNewIngredient(''); setPendingIngredient(''); setIngredientSuggestions([]); setError('');
@@ -168,8 +176,9 @@ export function MealForm({ initial, selectedDay, customIngredients = [], onAddCu
         <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 17, alignItems: 'center' }}><T style={{ color: '#fff', fontSize: 12, backgroundColor: '#10281BCC', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12 }}>{busy ? 'Finding this product…' : 'Hold the barcode inside the frame'}</T></View>
       </View> : <Button label="Open barcode scanner" icon={ScanLine} onPress={openBarcodeScanner} busy={busy} />}
       <T muted style={{ textAlign: 'center', fontSize: 11 }}>or enter the digits printed beneath it</T>
-      <Field label="Barcode number" value={barcode} onChangeText={value => { setBarcode(value.replace(/[^0-9]/g, '')); setError(''); scanLock.current = false; }} placeholder="8, 12, 13 or 14 digits" keyboardType="number-pad" returnKeyType="search" onSubmitEditing={() => void findBarcode(barcode)} maxLength={14} />
+      <Field label="Barcode number" value={barcode} onChangeText={value => { setBarcode(value.replace(/[^0-9]/g, '')); setBarcodeNeedsLabel(false); setError(''); scanLock.current = false; }} placeholder="8, 12, 13 or 14 digits" keyboardType="number-pad" returnKeyType="search" onSubmitEditing={() => void findBarcode(barcode)} maxLength={14} />
       <Button label="Look up this barcode" icon={Search} variant="secondary" onPress={() => void findBarcode(barcode)} busy={busy} disabled={!/^(?:\d{8}|\d{12}|\d{13}|\d{14})$/.test(barcode)} />
+      {barcodeNeedsLabel && <Card style={{ backgroundColor: '#FBEEE4' }}><T style={{ fontFamily: F.semi }}>The ingredients couldn’t be confirmed from this barcode.</T><T muted style={{ fontSize: 12 }}>Photograph the ingredients list on the packet, or enter the ingredients manually.</T><Button label="Photograph ingredients list" icon={Camera} onPress={photographMissingBarcodeLabel} /><Button label="Enter ingredients manually" icon={FileText} variant="secondary" onPress={enterMissingBarcodeIngredients} /></Card>}
       <Pressable accessibilityRole="link" onPress={() => Linking.openURL('https://world.openfoodfacts.org')}><T muted style={{ fontSize: 11 }}>Product data: Open Food Facts contributors · Open Database License (ODbL)</T></Pressable>
     </>}
     {mode === 'product' && <><Notice>Search the Open Food Facts catalogue by product name. Only the search is sent to Open Food Facts; your diary stays on your device.</Notice><Field label="Product name" value={query} onChangeText={setQuery} placeholder="e.g. Alpro oat milk" returnKeyType="search" onSubmitEditing={search} /><Button label="Search products" icon={Search} onPress={search} busy={busy} disabled={query.trim().length < 2} />{products.map(p => <Pressable key={p.barcode} accessibilityRole="button" onPress={() => chooseProduct(p)} style={{ padding: 16, borderWidth: 1, borderColor: C.line, borderRadius: 14 }}><T style={{ fontFamily: F.semi }}>{p.name}</T><T muted style={{ fontSize: 12 }}>{p.brands || p.barcode} · {p.ingredientsText ? 'Ingredients available' : 'Label needed'}</T></Pressable>)}{searched && products.length === 0 && <T muted>No matching products. Try scanning its barcode or ingredient label.</T>}<Pressable accessibilityRole="link" onPress={() => Linking.openURL('https://world.openfoodfacts.org')}><T muted style={{ fontSize: 11 }}>Product data: Open Food Facts contributors · Open Database License (ODbL)</T></Pressable></>}
