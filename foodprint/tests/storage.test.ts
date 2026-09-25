@@ -39,10 +39,19 @@ test('rejects invalid or duplicate personal ingredients', () => {
 
 test('notification choices survive backups and reject invalid times or duplicate pattern keys', () => {
   const state = emptyDiary();
-  state.data.notificationPreferences = { dailyReminderEnabled: true, dailyReminderHour: 19, dailyReminderMinute: 45, dailyReminderId: 'local-reminder-1', patternAlertsEnabled: true, notifiedPatternKeys: ['garlic|bloating'] };
+  state.data.notificationPreferences = { foodRemindersEnabled: true, foodReminderTimes: [{ key: 'breakfast', hour: 8, minute: 15, notificationId: 'food-1' }, { key: 'dinner', hour: 19, minute: 45, notificationId: 'food-2' }], dayReviewReminderEnabled: true, dayReviewReminderHour: 21, dayReviewReminderMinute: 0, dayReviewReminderId: 'review-1', patternAlertsEnabled: true, notifiedPatternKeys: ['garlic|bloating'] };
   assert.deepEqual(parseDiary(JSON.stringify(state)), state);
-  assert.throws(parseModified(value => { value.data.notificationPreferences = { dailyReminderEnabled: true, dailyReminderHour: 24, dailyReminderMinute: 0, patternAlertsEnabled: false, notifiedPatternKeys: [] }; }), /invalid notification preferences/);
-  assert.throws(parseModified(value => { value.data.notificationPreferences = { dailyReminderEnabled: false, dailyReminderHour: 20, dailyReminderMinute: 0, patternAlertsEnabled: true, notifiedPatternKeys: ['one', 'one'] }; }), /invalid notification preferences/);
+  assert.throws(parseModified(value => { value.data.notificationPreferences = { ...state.data.notificationPreferences!, dayReviewReminderHour: 24 }; }), /invalid notification preferences/);
+  assert.throws(parseModified(value => { value.data.notificationPreferences = { ...state.data.notificationPreferences!, notifiedPatternKeys: ['one', 'one'] }; }), /invalid notification preferences/);
+  assert.throws(parseModified(value => { value.data.notificationPreferences = { ...state.data.notificationPreferences!, foodReminderTimes: [{ key: 'one', hour: 8, minute: 0 }, { key: 'one', hour: 12, minute: 0 }] }; }), /invalid notification preferences/);
+});
+
+test('accepts legacy notification settings and explicit symptom-free confirmation', () => {
+  const state = emptyDiary();
+  state.data.notificationPreferences = { dailyReminderEnabled: true, dailyReminderHour: 19, dailyReminderMinute: 45, dailyReminderId: 'legacy-1', patternAlertsEnabled: false, notifiedPatternKeys: [] } as any;
+  state.data.checkIns.push({ date: '2026-09-20', complete: true, noSymptomsConfirmed: true, stress: 2 });
+  assert.deepEqual(parseDiary(JSON.stringify(state)), state);
+  assert.throws(parseModified(value => value.data.checkIns.push({ date: '2026-09-20', complete: true, noSymptomsConfirmed: 'yes' as any, stress: 2 })), /invalid check-in/);
 });
 
 test('rejects impossible calendar dates and duplicate daily check-ins', () => {

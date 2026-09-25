@@ -15,9 +15,16 @@ export interface CustomIngredientDefinition {
 }
 
 export interface NotificationPreferences {
-  dailyReminderEnabled: boolean;
-  dailyReminderHour: number;
-  dailyReminderMinute: number;
+  foodRemindersEnabled: boolean;
+  foodReminderTimes: { key: string; hour: number; minute: number; notificationId?: string }[];
+  dayReviewReminderEnabled: boolean;
+  dayReviewReminderHour: number;
+  dayReviewReminderMinute: number;
+  dayReviewReminderId?: string;
+  /** Kept optional so an older on-device diary can be migrated without losing its reminder. */
+  dailyReminderEnabled?: boolean;
+  dailyReminderHour?: number;
+  dailyReminderMinute?: number;
   dailyReminderId?: string;
   patternAlertsEnabled: boolean;
   notifiedPatternKeys: string[];
@@ -57,6 +64,8 @@ export interface DayCheckIn {
   date: string;
   /** User confirms the day is complete, allowing tracked-but-unlogged feelings to count as absent. */
   complete: boolean;
+  /** Explicit confirmation used when the day has no logged negative symptoms. */
+  noSymptomsConfirmed?: boolean;
   /** Snapshot of feelings actively checked for, including any feeling logged that day. */
   trackedSymptomIds?: string[];
   stress: Level;

@@ -26,21 +26,29 @@ export async function requestLocalNotificationPermission(): Promise<boolean> {
   return requested.granted;
 }
 
-export async function replaceDailyReminder(previousId: string | undefined, hour: number, minute: number, enabled: boolean): Promise<string | undefined> {
-  if (Platform.OS === 'web') return undefined;
-  if (previousId) {
+export async function replaceLocalReminders(previousIds: (string | undefined)[], times: { hour: number; minute: number }[], enabled: boolean, kind: 'food' | 'day-review'): Promise<string[]> {
+  if (Platform.OS === 'web') return [];
+  for (const previousId of previousIds) {
+    if (!previousId) continue;
     try { await Notifications.cancelScheduledNotificationAsync(previousId); } catch { /* It may have been removed in iOS Settings. */ }
   }
-  if (!enabled) return undefined;
-  return Notifications.scheduleNotificationAsync({
-    content: {
-      title: 'A quick Bellywise check-in',
-      body: 'Log today’s food, drinks and feelings while they are still fresh in your mind.',
-      sound: 'default',
-      data: { kind: 'daily-reminder' },
-    },
-    trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour, minute },
-  });
+  if (!enabled) return [];
+  const content = kind === 'food'
+    ? { title: 'Time to log food or drink', body: 'Add what you ate or drank while it is still fresh in your mind.' }
+    : { title: 'How was your day?', body: 'Log any feelings, or confirm that today was symptom-free.' };
+  const ids: string[] = [];
+  try {
+    for (const time of times) ids.push(await Notifications.scheduleNotificationAsync({
+      content: { ...content, sound: 'default', data: { kind: `${kind}-reminder` } },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour: time.hour, minute: time.minute },
+    }));
+  } catch (error) {
+    for (const id of ids) {
+      try { await Notifications.cancelScheduledNotificationAsync(id); } catch { /* Best-effort rollback. */ }
+    }
+    throw error;
+  }
+  return ids;
 }
 
 export async function notifyNewPatterns(patterns: { ingredientName: string; symptomName: string }[]): Promise<void> {
