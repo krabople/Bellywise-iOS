@@ -49,6 +49,69 @@ export function splitIngredientList(text: string): string[] {
   return [...new Set(tokens)];
 }
 
+function matchingBracket(text: string, start: number): number {
+  const pairs: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
+  const opening = text[start];
+  const closing = pairs[opening];
+  if (!closing) return -1;
+  let depth = 0;
+  for (let index = start; index < text.length; index += 1) {
+    if (text[index] === opening) depth += 1;
+    if (text[index] === closing) depth -= 1;
+    if (depth === 0) return index;
+  }
+  return -1;
+}
+
+function cleanIngredientName(value: string): string {
+  return cleanToken(value)
+    .replace(/^_+|_+$/g, '')
+    .replace(/^contains?\s+(?:(?:less\s+than\s+)?\d+(?:\.\d+)?\s*%\s*(?:or\s+less\s+of)?\s*:?)?/i, '')
+    .replace(/\b\d+(?:\.\d+)?\s*%\b/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s:;,]+|[\s:;,]+$/g, '')
+    .trim();
+}
+
+/**
+ * Expand compound label entries into distinct exposures for correlation analysis.
+ * Both the named compound and its nested components are retained because either
+ * can recur independently in a diary (for example, "pasta" and "egg").
+ */
+export function expandIngredientNames(ingredients: string[]): string[] {
+  const expanded: string[] = [];
+  const visit = (raw: string, depth = 0) => {
+    if (depth > 8) return;
+    const text = cleanToken(raw);
+    if (!text) return;
+    let cursor = 0;
+    let base = '';
+    const nested: string[] = [];
+    while (cursor < text.length) {
+      const bracket = text.slice(cursor).search(/[([{]/);
+      if (bracket < 0) { base += ` ${text.slice(cursor)}`; break; }
+      const start = cursor + bracket;
+      base += ` ${text.slice(cursor, start)}`;
+      const end = matchingBracket(text, start);
+      if (end < 0) { base += ` ${text.slice(start)}`; break; }
+      const inner = text.slice(start + 1, end);
+      nested.push(...splitIngredientList(inner));
+      cursor = end + 1;
+    }
+    const name = cleanIngredientName(base || text);
+    if (name && !/^\d+(?:\.\d+)?\s*%?$/.test(name)) expanded.push(name);
+    for (const child of nested) visit(child, depth + 1);
+  };
+  for (const ingredient of ingredients) visit(ingredient);
+  const seen = new Set<string>();
+  return expanded.filter(name => {
+    const key = name.toLocaleLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 interface SectionMarker { start: number; end: number; kind: 'allergens' | 'traces' | 'other' }
 
 function findSections(text: string): SectionMarker[] {

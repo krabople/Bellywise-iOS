@@ -3,11 +3,12 @@ import { Linking, Platform, Pressable, Switch, View } from 'react-native';
 import { Camera, Check, CheckCheck, FileText, Plus, Search, Trash2, X, Image as ImageIcon, ScanLine } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
+import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { T, C, F, Row, Button, Field, Notice, Chip, Pill, Sheet, IconButton } from './ui';
 import { DateField } from './DateField';
 import { resolveFood, ingredientsFromNames, localDateKey } from '../domain';
 import type { IngredientExposure, Level, Meal, SymptomDefinition, SymptomLog } from '../domain/types';
-import { parseIngredientLabel } from '../services/labelParser';
+import { expandIngredientNames, parseIngredientLabel } from '../services/labelParser';
 import { isIngredientOcrAvailable, recognizeIngredientImage } from '../services/ocr';
 import { lookupBarcode, searchProducts, type CatalogProduct } from '../services/products';
 
@@ -19,8 +20,10 @@ function defaultEntryDate(selectedDay?: string): Date {
   return Number.isFinite(noon.getTime()) ? noon : now;
 }
 
-export function MealForm({ initial, selectedDay, onClose, onSave, onDelete, initialMode = 'type' }: { initial?: Meal; selectedDay?: string; onClose: () => void; onSave: (meal: Meal) => Promise<void>; onDelete?: () => Promise<void>; initialMode?: 'type' | 'scan' }) {
-  const [mode, setMode] = useState<'type' | 'scan' | 'product'>(initial?.source === 'label' ? 'scan' : initialMode);
+type MealEntryMode = 'barcode' | 'type' | 'scan' | 'product';
+
+export function MealForm({ initial, selectedDay, onClose, onSave, onDelete, initialMode = 'barcode' }: { initial?: Meal; selectedDay?: string; onClose: () => void; onSave: (meal: Meal) => Promise<void>; onDelete?: () => Promise<void>; initialMode?: MealEntryMode }) {
+  const [mode, setMode] = useState<MealEntryMode>(initial ? initial.source === 'label' ? 'scan' : 'type' : initialMode);
   const [kind, setKind] = useState<'food' | 'drink'>(initial?.kind || 'food');
   const [name, setName] = useState(initial?.name || '');
   const [date, setDate] = useState(() => initial ? new Date(initial.eatenAt) : defaultEntryDate(selectedDay));
@@ -40,9 +43,13 @@ export function MealForm({ initial, selectedDay, onClose, onSave, onDelete, init
   const [searched, setSearched] = useState(false);
   const [confirmed, setConfirmed] = useState(!!initial);
   const [deleteCheck, setDeleteCheck] = useState(false);
+  const [barcode, setBarcode] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const resolution = useMemo(() => resolveFood(name, variant || undefined), [name, variant]);
   const currentOperation = useRef(0);
-  const resetReview = () => { setReview(false); setConfirmed(false); setError(''); setWarnings([]); };
+  const scanLock = useRef(false);
+  const resetReview = () => { setReview(false); setConfirmed(false); setError(''); setWarnings([]); setScannerOpen(false); scanLock.current = false; };
   const showTyped = () => { setIngredients(resolution.ingredients); setReview(true); setWarnings(resolution.matched ? [] : ['This food or drink is not in the offline recipe guide. Add its ingredients, or save the entry without ingredient assumptions.']); setSource('typed'); setConfirmed(false); };
   const parseLabel = (text = label, manual = manualSelection, confidence?: number, product?: CatalogProduct) => {
     const parsed = parseIngredientLabel(text, { source: product ? 'catalog' : manual ? 'manual' : 'ocr', ocrConfidence: confidence });
@@ -50,7 +57,7 @@ export function MealForm({ initial, selectedDay, onClose, onSave, onDelete, init
     const traces = [...new Set([...parsed.mayContain, ...(product?.traces ?? [])])];
     setWarnings([...parsed.warnings, ...(product?.warnings ?? []), ...(allergens.length ? [`Allergen statement (separate from ingredients): ${allergens.join(', ')}.`] : []), ...(traces.length ? [`May contain: ${traces.join(', ')}. This is a trace warning, not confirmed consumption.`] : [])]);
     if (!parsed.ingredients.length) { setError('Select or type just the ingredient list below, then turn on “I selected only the ingredients”.'); setReview(false); return; }
-    setError(''); setIngredients(ingredientsFromNames(parsed.ingredients, 'inferred')); setSource('label'); setReview(true); setConfirmed(false);
+    setError(''); setIngredients(ingredientsFromNames(expandIngredientNames(parsed.ingredients), 'inferred')); setSource('label'); setReview(true); setConfirmed(false);
   };
   const scan = async (camera: boolean) => {
     if (!isIngredientOcrAvailable()) { setError('Camera text recognition runs in the iPhone or iPad build. In this browser preview, paste a label below to try the ingredient parser.'); return; }
@@ -76,10 +83,35 @@ export function MealForm({ initial, selectedDay, onClose, onSave, onDelete, init
   };
   const chooseProduct = (p: CatalogProduct) => {
     setName(p.name); setNotes([p.brands, `Product data: ${p.sourceUrl}`, 'Open Food Facts · ODbL'].filter(Boolean).join('\n'));
-    setLabel(p.ingredientsText || ''); setMode('scan'); setManualSelection(true); setProducts([]);
+    setLabel(p.ingredientsText || ''); setMode('scan'); setManualSelection(true); setProducts([]); setScannerOpen(false);
     if (p.ingredientsText) parseLabel(p.ingredientsText, true, undefined, p);
-    else { setWarnings(p.warnings); setError('This product has no ingredients in the catalogue. Scan its label or enter ingredients yourself.'); setReview(false); }
+    else { scanLock.current = false; setWarnings(p.warnings); setError('This product has no ingredients in the catalogue. Scan its label or enter ingredients yourself.'); setReview(false); }
   };
+  const findBarcode = async (raw: string) => {
+    const code = raw.replace(/[^0-9]/g, '');
+    setBarcode(code);
+    if (scanLock.current || busy) return;
+    scanLock.current = true;
+    const operation = ++currentOperation.current;
+    setBusy(true); setError(''); setWarnings([]);
+    try {
+      const product = await lookupBarcode(code);
+      if (operation !== currentOperation.current) return;
+      if (!product) { setError('That barcode is not in the product catalogue. Scan the ingredients panel or log the product manually.'); scanLock.current = false; return; }
+      chooseProduct(product);
+    } catch (e) {
+      if (operation === currentOperation.current) setError(e instanceof Error ? e.message : 'The barcode could not be looked up.');
+      scanLock.current = false;
+    } finally { if (operation === currentOperation.current) setBusy(false); }
+  };
+  const openBarcodeScanner = async () => {
+    setError(''); scanLock.current = false;
+    if (Platform.OS === 'web') { setError('Live barcode scanning is available in the iPhone and iPad app. Enter the barcode number below in this browser preview.'); return; }
+    const permission = cameraPermission?.granted ? cameraPermission : await requestCameraPermission();
+    if (!permission.granted) { setError('Camera access is off. Enable it in Settings, enter the barcode number, or log the product manually.'); return; }
+    setScannerOpen(true);
+  };
+  const onBarcodeScanned = (result: BarcodeScanningResult) => { void findBarcode(result.data); };
   const save = async () => {
     setError('');
     if (!name.trim()) { setError('Give this food or drink a name.'); return; }
@@ -92,14 +124,26 @@ export function MealForm({ initial, selectedDay, onClose, onSave, onDelete, init
   };
   return <Sheet title={initial ? `Edit ${kind}` : 'What did you eat or drink?'} subtitle="A little detail now makes your patterns more useful." onClose={onClose}>
     <Row style={{ gap: 8 }}><Chip label="Food" selected={kind === 'food'} onPress={() => setKind('food')} /><Chip label="Drink" selected={kind === 'drink'} onPress={() => setKind('drink')} /></Row>
-    {!initial && <Row style={{ flexWrap: 'wrap', gap: 8 }}>{(['type', 'scan', 'product'] as const).map(m => <Chip key={m} label={m === 'type' ? 'Type a name' : m === 'scan' ? 'Scan a label' : 'Find a product'} selected={mode === m} onPress={() => { setMode(m); resetReview(); }} />)}</Row>}
-    {mode === 'product' && <><Notice>Search the Open Food Facts catalogue by name or barcode. Only this search is sent to Open Food Facts; your diary stays on your device.</Notice><Field label="Product name or barcode" value={query} onChangeText={setQuery} placeholder="e.g. Alpro oat milk or 13-digit barcode" returnKeyType="search" onSubmitEditing={search} /><Button label="Search products" icon={Search} onPress={search} busy={busy} disabled={query.trim().length < 3} />{products.map(p => <Pressable key={p.barcode} accessibilityRole="button" onPress={() => chooseProduct(p)} style={{ padding: 16, borderWidth: 1, borderColor: C.line, borderRadius: 14 }}><T style={{ fontFamily: F.semi }}>{p.name}</T><T muted style={{ fontSize: 12 }}>{p.brands || p.barcode} · {p.ingredientsText ? 'Ingredients available' : 'Label needed'}</T></Pressable>)}{searched && products.length === 0 && <T muted>No matching products. Try the barcode, or scan the label.</T>}<Pressable accessibilityRole="link" onPress={() => Linking.openURL('https://world.openfoodfacts.org')}><T muted style={{ fontSize: 11 }}>Product data: Open Food Facts · Open Database License (ODbL)</T></Pressable></>}
+    {!initial && <Row style={{ flexWrap: 'wrap', gap: 8 }}>{(['barcode', 'type', 'scan', 'product'] as const).map(m => <Chip key={m} label={m === 'barcode' ? 'Scan barcode' : m === 'type' ? 'Log manually' : m === 'scan' ? 'Scan ingredients' : 'Search by name'} selected={mode === m} onPress={() => { setMode(m); resetReview(); }} />)}</Row>}
+    {mode === 'barcode' && !review && <>
+      <Notice>Scan the barcode on a packet. Bellywise retrieves that product’s published ingredient list from Open Food Facts, then separates compound ingredients for individual review and pattern checks. It never guesses ingredients from the product name.</Notice>
+      {scannerOpen ? <View style={{ height: 270, borderRadius: 20, overflow: 'hidden', backgroundColor: '#17251E' }}>
+        <CameraView active style={{ flex: 1 }} facing="back" barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'itf14'] }} onBarcodeScanned={busy ? undefined : onBarcodeScanned} onMountError={() => { setScannerOpen(false); setError('The camera could not start. Enter the barcode number below instead.'); }} />
+        <View pointerEvents="none" style={{ position: 'absolute', left: 30, right: 30, top: 72, height: 112, borderWidth: 2, borderColor: '#F4F4E9', borderRadius: 16 }} />
+        <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 17, alignItems: 'center' }}><T style={{ color: '#fff', fontSize: 12, backgroundColor: '#10281BCC', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12 }}>{busy ? 'Finding this product…' : 'Hold the barcode inside the frame'}</T></View>
+      </View> : <Button label="Open barcode scanner" icon={ScanLine} onPress={openBarcodeScanner} busy={busy} />}
+      <T muted style={{ textAlign: 'center', fontSize: 11 }}>or enter the digits printed beneath it</T>
+      <Field label="Barcode number" value={barcode} onChangeText={value => { setBarcode(value.replace(/[^0-9]/g, '')); setError(''); scanLock.current = false; }} placeholder="8, 12, 13 or 14 digits" keyboardType="number-pad" returnKeyType="search" onSubmitEditing={() => void findBarcode(barcode)} maxLength={14} />
+      <Button label="Look up this barcode" icon={Search} variant="secondary" onPress={() => void findBarcode(barcode)} busy={busy} disabled={!/^(?:\d{8}|\d{12}|\d{13}|\d{14})$/.test(barcode)} />
+      <Pressable accessibilityRole="link" onPress={() => Linking.openURL('https://world.openfoodfacts.org')}><T muted style={{ fontSize: 11 }}>Product data: Open Food Facts contributors · Open Database License (ODbL)</T></Pressable>
+    </>}
+    {mode === 'product' && <><Notice>Search the Open Food Facts catalogue by product name. Only the search is sent to Open Food Facts; your diary stays on your device.</Notice><Field label="Product name" value={query} onChangeText={setQuery} placeholder="e.g. Alpro oat milk" returnKeyType="search" onSubmitEditing={search} /><Button label="Search products" icon={Search} onPress={search} busy={busy} disabled={query.trim().length < 2} />{products.map(p => <Pressable key={p.barcode} accessibilityRole="button" onPress={() => chooseProduct(p)} style={{ padding: 16, borderWidth: 1, borderColor: C.line, borderRadius: 14 }}><T style={{ fontFamily: F.semi }}>{p.name}</T><T muted style={{ fontSize: 12 }}>{p.brands || p.barcode} · {p.ingredientsText ? 'Ingredients available' : 'Label needed'}</T></Pressable>)}{searched && products.length === 0 && <T muted>No matching products. Try scanning its barcode or ingredient label.</T>}<Pressable accessibilityRole="link" onPress={() => Linking.openURL('https://world.openfoodfacts.org')}><T muted style={{ fontSize: 11 }}>Product data: Open Food Facts contributors · Open Database License (ODbL)</T></Pressable></>}
     {mode !== 'product' && <>
-      <Field label={kind === 'drink' ? 'Drink' : 'Food or meal'} value={name} onChangeText={v => { setName(v); if (mode === 'type') { setVariant(''); resetReview(); } }} placeholder={kind === 'drink' ? 'e.g. oat latte, beer, orange juice' : 'e.g. bread, spaghetti bolognese'} maxLength={300} />
+      {(mode !== 'barcode' || review) && <Field label={kind === 'drink' ? 'Drink' : 'Food or meal'} value={name} onChangeText={v => { setName(v); if (mode === 'type') { setVariant(''); resetReview(); } }} placeholder={kind === 'drink' ? 'e.g. oat latte, beer, orange juice' : 'e.g. bread, spaghetti bolognese'} maxLength={300} />}
       {mode === 'type' && !review && <>{resolution.questions.map(q => <View key={q.id} style={{ gap: 9 }}><T style={{ fontFamily: F.medium }}>{q.prompt}</T><Row style={{ flexWrap: 'wrap', gap: 8 }}>{q.options.map(o => <Chip key={o.id} label={o.label} selected={variant === o.id} onPress={() => setVariant(o.id)} />)}</Row></View>)}{name.length > 1 && <T muted style={{ fontSize: 12 }}>{resolution.description}</T>}<Button label="Review ingredients" icon={CheckCheck} disabled={!name.trim()} onPress={showTyped} /></>}
       {mode === 'scan' && <><Row><Button label="Take photo" icon={Camera} onPress={() => scan(true)} busy={busy} style={{ flex: 1 }} /><Button label="Choose photo" icon={ImageIcon} variant="secondary" onPress={() => scan(false)} disabled={busy} style={{ flex: 1 }} /></Row><T muted style={{ fontSize: 12 }}>Keep the “Ingredients” heading in frame. Crop away other panels. Text recognition happens on your device.</T><Field label="Label text" value={label} onChangeText={v => { setLabel(v); resetReview(); }} placeholder="Ingredients: wheat flour, water, yeast, salt…" multiline /><Row style={{ justifyContent: 'space-between' }}><T style={{ flex: 1, fontSize: 12 }}>I selected only the ingredients</T><Switch accessibilityLabel="I selected only the ingredients" value={manualSelection} onValueChange={v => { setManualSelection(v); resetReview(); }} trackColor={{ true: C.green }} /></Row><Button label="Find ingredients in text" icon={ScanLine} variant="secondary" onPress={() => parseLabel()} disabled={!label.trim() || busy} /></>}
       {warnings.map((w, i) => <Notice warm key={i}>{w}</Notice>)}
-      {review && <><Row style={{ justifyContent: 'space-between' }}><T style={{ fontFamily: F.semi }}>Review the ingredients</T><Pill label={`${ingredients.length} ingredients`} /></Row><T muted style={{ fontSize: 12 }}>Recipe suggestions are estimates. Remove anything you didn’t consume. Tap “Confirm” only when you know an ingredient was present.</T>
+      {review && <><Row style={{ justifyContent: 'space-between' }}><T style={{ fontFamily: F.semi }}>Review each ingredient</T><Pill label={`${ingredients.length} ingredients`} /></Row><T muted style={{ fontSize: 12 }}>Compound ingredients have been separated so Bellywise can check each one independently. Remove anything you didn’t consume. Confirm only after checking the current packet or recipe.</T>
         {ingredients.length === 0 && <Notice>No ingredients yet. You can add them below, or save this entry by name. Unknown ingredients cannot contribute to ingredient patterns.</Notice>}
         <View style={{ gap: 4 }}>{ingredients.map((ingredient, i) => <Row key={`${ingredient.id}-${i}`} style={{ paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: C.line }}><View style={{ flex: 1 }}><T style={{ fontSize: 13 }}>{ingredient.name}</T><T muted style={{ fontSize: 10 }}>{ingredient.confidence === 'confirmed' ? 'Confirmed by you' : 'Suggested · not yet confirmed'}</T></View><Pressable accessibilityRole="button" onPress={() => setIngredients(xs => xs.map((x, j) => j === i ? { ...x, confidence: x.confidence === 'confirmed' ? 'inferred' : 'confirmed' } : x))} style={{ padding: 9 }}><T style={{ fontSize: 11, color: C.green }}>{ingredient.confidence === 'confirmed' ? 'Unconfirm' : 'Confirm'}</T></Pressable><IconButton icon={X} label={`Remove ${ingredient.name}`} onPress={() => setIngredients(xs => xs.filter((_, j) => j !== i))} /></Row>)}</View>
         <Row><View style={{ flex: 1 }}><Field value={newIngredient} onChangeText={setNewIngredient} placeholder="Add an ingredient you know" maxLength={300} /></View><IconButton icon={Plus} label="Add ingredient" onPress={() => { if (newIngredient.trim()) { const additions = ingredientsFromNames([newIngredient.trim()], 'confirmed'); setIngredients(xs => [...xs.filter(x => !additions.some(a => a.id === x.id)), ...additions]); setNewIngredient(''); } }} /></Row>

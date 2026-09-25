@@ -2,6 +2,8 @@
 
 ## What is implemented
 
+Barcode scanning is the primary meal-entry route. `expo-camera` presents a live scanner for EAN-8, EAN-13, UPC-A, UPC-E and ITF-14 codes. A detected code is looked up in Open Food Facts and only the ingredient declaration returned for that exact product record is used. The barcode route never substitutes recipe assumptions based on the product name. If that record has no ingredient declaration, the UI requires a packet-label scan or manual entry instead. Every returned declaration is shown for review before saving. People can also enter a barcode number, search by product name, photograph an ingredient list, or log a meal manually.
+
 The local `modules/foodprint-vision` Expo module calls Apple Vision `VNRecognizeTextRequest` on a local image. It uses accurate recognition, English preferences with automatic language detection, and ImageIO downsampling with orientation handling. It returns text, per-block confidence and normalized bounding boxes. Images stay on the device; this module has no network request. Recognition runs on a background queue. The native module's internal name remains `FoodprintVision`.
 
 The app captures an image through `expo-image-picker`, passes the resulting `file://` URI to `recognizeIngredientImage`, then presents `parseIngredientLabel` results for review. `isIngredientOcrAvailable()` returns false in web previews, Android and Expo Go. A custom iOS build includes the module. [Apple text recognition](https://developer.apple.com/documentation/vision/vnrecognizetextrequest), [Expo local modules](https://docs.expo.dev/modules/get-started/).
@@ -13,6 +15,7 @@ The app captures an image through `expo-image-picker`, passes the resulting `fil
 - Default/`ocr` mode requires an explicit `Ingredients:` heading or a standalone Ingredients heading. Without one, `status` is `needs-manual-selection` and no ingredients are emitted.
 - `manual` and `catalog` mode accept a previously selected ingredient field without a heading. Do not pass an entire unreviewed packet photo into these modes to bypass the heading check.
 - Boundaries such as nutrition, storage, preparation, allergen advice and best-before text terminate the ingredient section. Nested parentheses and subrecipes remain intact.
+- After the declaration is parsed, `expandIngredientNames` recursively separates nested subrecipes. For example, `pasta (wheat, egg)` produces individual exposure records for `pasta`, `wheat`, and `egg`, allowing each to be analysed independently. The review remains editable because punctuation and community catalogue data can be wrong.
 - Separate `Contains` and `May contain` statements do not become ingredient tokens. Possible cross-contact is not a confirmed exposure. Absence of a declaration never proves absence of an allergen.
 - The score is OCR character confidence, never ingredient certainty or medical confidence. Low confidence and incomplete parentheses add warnings.
 - Always show editable recognized text and require an explicit save. Never auto-save a scan. The parser supports English headings; foreign labels, curved packets, glare and multi-column layouts may require manual correction.
@@ -31,7 +34,7 @@ Show the returned `attribution`, linked `sourceUrl`, and warnings alongside the 
 
 The Expo autolinker finds the local module in the default `./modules` directory. The module has its own package manifest, `expo-module.config.json`, iOS podspec and Swift class. `npx expo-modules-autolinking resolve --platform ios --json` should include `foodprint-vision` and `FoodprintVisionModule`. This was verified on the development machine.
 
-App config must include the `expo-image-picker` config plugin with clear camera and photo-library permission strings. Request camera permission when the person chooses scanning. No microphone permission is needed for still photos; use `microphonePermission: false`. The intended deployment target is iOS 16.4+, including iPad. [ImagePicker configuration](https://docs.expo.dev/versions/latest/sdk/imagepicker/), [Expo module configuration](https://docs.expo.dev/modules/module-config/).
+App config must include both `expo-camera` and `expo-image-picker` config plugins with clear camera and photo-library permission strings. Request camera permission when the person opens the live barcode scanner. No microphone permission is needed; use `microphonePermission: false` and `recordAudioAndroid: false`. The intended deployment target is iOS 16.4+, including iPad. [Camera configuration](https://docs.expo.dev/versions/v57.0.0/sdk/camera/), [ImagePicker configuration](https://docs.expo.dev/versions/v57.0.0/sdk/imagepicker/), [Expo module configuration](https://docs.expo.dev/modules/module-config/).
 
 ## Verification and macOS build
 
@@ -43,4 +46,4 @@ SQLCipher and the custom Vision bridge require a native build; Expo Go cannot va
 
 This development host is Windows. Swift compilation, CocoaPods and camera behavior cannot be verified locally. A successful macOS job and real-device tests are required before claiming native validation. The simulator artifact is not an App Store archive and cannot be submitted to TestFlight. Signing and App Store Connect submission are separate release steps.
 
-Before a release, test a clear packet, a curved packet, no readable text, denied camera permission, cancellation, an English label without a heading, a foreign label, and a product without ingredients. Confirm image orientation, separate may-contain text, correction before save, and recovery after airplane mode or a rate-limit response.
+Before a release, test valid EAN and UPC barcodes, an unknown barcode, a denied camera permission, repeat scan suppression, and catalogue records with nested or missing ingredients. Also test a clear packet, a curved packet, no readable text, cancellation, an English label without a heading, and a foreign label. Confirm image orientation, separate may-contain text, correction before save, and recovery after airplane mode or a rate-limit response.

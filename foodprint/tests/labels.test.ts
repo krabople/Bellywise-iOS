@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseIngredientLabel, splitIngredientList } from '../src/services/labelParser';
+import { expandIngredientNames, parseIngredientLabel, splitIngredientList } from '../src/services/labelParser';
 import { normalizeCatalogProduct, lookupBarcode, searchProducts, CatalogError } from '../src/services/products';
 
 test('isolates ingredients from marketing, nutrition, allergens and storage', () => {
@@ -17,6 +17,17 @@ test('keeps nested subingredients and embedded allergen declarations intact', ()
   const result = parseIngredientLabel('Ingredients: sauce (tomato, whey (contains milk)), rice. Storage: refrigerate');
   assert.deepEqual(result.ingredients, ['sauce (tomato, whey (contains milk))', 'rice']);
   assert.deepEqual(result.allergens, []);
+});
+
+test('expands compound products into separate correlation ingredients', () => {
+  assert.deepEqual(
+    expandIngredientNames(['Pasta (durum wheat semolina, egg)', 'sauce [tomato, cheese (contains milk)]', 'salt']),
+    ['Pasta', 'durum wheat semolina', 'egg', 'sauce', 'tomato', 'cheese', 'milk', 'salt'],
+  );
+  assert.deepEqual(
+    expandIngredientNames(['gluten-free oats (60%)', 'contains 2% or less of: salt', 'oats']),
+    ['gluten-free oats', 'salt', 'oats'],
+  );
 });
 
 test('does not promote arbitrary OCR words without an explicit header', () => {
