@@ -5,7 +5,7 @@ import { normalizeCatalogProduct, lookupBarcode, searchProducts, CatalogError } 
 
 test('isolates ingredients from marketing, nutrition, allergens and storage', () => {
   const result = parseIngredientLabel('Wonderful bread\nHigh in fibre\nINGREDIENTS: Wheat flour, water, yeast, salt.\nContains: wheat.\nMay contain milk and sesame.\nNutrition per 100g\nEnergy 850kJ\nStorage: cool and dry');
-  assert.deepEqual(result.ingredients, ['Wheat flour', 'water', 'yeast', 'salt']);
+  assert.deepEqual(result.ingredients, ['Wheat', 'Water', 'Yeast', 'Salt']);
   assert.deepEqual(result.allergens, ['wheat']);
   assert.deepEqual(result.mayContain, ['milk', 'sesame']);
   assert.equal(result.status, 'review');
@@ -15,7 +15,7 @@ test('isolates ingredients from marketing, nutrition, allergens and storage', ()
 test('keeps nested subingredients and embedded allergen declarations intact', () => {
   assert.deepEqual(splitIngredientList('Pasta (durum wheat semolina, egg), sauce [tomato, cheese (contains milk)], salt'), ['Pasta (durum wheat semolina, egg)', 'sauce [tomato, cheese (contains milk)]', 'salt']);
   const result = parseIngredientLabel('Ingredients: sauce (tomato, whey (contains milk)), rice. Storage: refrigerate');
-  assert.deepEqual(result.ingredients, ['sauce (tomato, whey (contains milk))', 'rice']);
+  assert.deepEqual(result.ingredients, ['sauce', 'Tomato', 'Milk', 'Rice']);
   assert.deepEqual(result.allergens, []);
 });
 
@@ -30,30 +30,42 @@ test('expands compound products into separate correlation ingredients', () => {
   );
 });
 
-test('does not promote arbitrary OCR words without an explicit header', () => {
+test('recognises a dense ingredient line without requiring a header', () => {
   const result = parseIngredientLabel('Fresh wholesome goodness\nBread\nWheat, water, salt\nBest before tomorrow');
-  assert.equal(result.status, 'needs-manual-selection');
-  assert.deepEqual(result.ingredients, []);
+  assert.equal(result.status, 'review');
+  assert.deepEqual(result.ingredients, ['Wheat', 'Water', 'Salt']);
   assert.equal(result.hasIngredientsHeader, false);
 });
 
 test('supports a standalone heading and manually selected ingredient field', () => {
-  assert.deepEqual(parseIngredientLabel('Ingredients\nRice flour, water\nNutrition information: 4g').ingredients, ['Rice flour', 'water']);
+  assert.deepEqual(parseIngredientLabel('Ingredients\nRice flour, water\nNutrition information: 4g').ingredients, ['Rice', 'Water']);
   assert.deepEqual(parseIngredientLabel('rice flour, water, salt', { source: 'manual' }).ingredients, ['rice flour', 'water', 'salt']);
-  assert.deepEqual(parseIngredientLabel('rice flour, water, salt', { source: 'catalog' }).ingredients, ['rice flour', 'water', 'salt']);
+  assert.deepEqual(parseIngredientLabel('rice flour, water, salt', { source: 'catalog' }).ingredients, ['Rice', 'Water', 'Salt']);
 });
 
 test('preserves gluten-free text and percentages without inventing ingredients', () => {
   const result = parseIngredientLabel('Ingredients: gluten-free oats (60%), water, contains 2% or less of: salt, yeast. Nutrition Facts: fat 5g');
-  assert.deepEqual(result.ingredients, ['gluten-free oats (60%)', 'water', 'contains 2% or less of: salt', 'yeast']);
+  assert.deepEqual(result.ingredients, ['Oats', 'Water', 'Salt', 'Yeast']);
   assert.deepEqual(result.allergens, []);
 });
 
 test('never folds may-contain into confirmed ingredients', () => {
   const result = parseIngredientLabel('Ingredients: rice, salt. May contain traces of wheat, peanuts. Best before: see base');
-  assert.deepEqual(result.ingredients, ['rice', 'salt']);
+  assert.deepEqual(result.ingredients, ['Rice', 'Salt']);
   assert.deepEqual(result.mayContain, ['wheat', 'peanuts']);
   assert.ok(result.warnings.some(warning => warning.includes('cross-contact')));
+});
+
+test('uses context, canonical aliases and section boundaries instead of plucking words', () => {
+  const result = parseIngredientLabel('GLUTEN FREE\nWater, niacin (vitamin B3), salt\nAllergy advice! Contains celery\nNutrition 100g');
+  assert.deepEqual(result.ingredients, ['Water', 'Niacin (vitamin B3)', 'Salt']);
+  assert(!result.ingredients.some(item => /gluten|celery|allergy/i.test(item)));
+});
+
+test('does not accept isolated catalogue words from packaging prose', () => {
+  const result = parseIngredientLabel('High fibre\nNatural energy\nStore in a cool place');
+  assert.equal(result.status, 'needs-manual-selection');
+  assert.deepEqual(result.ingredients, []);
 });
 
 test('cuts a nutrition heading even when OCR misses a closing bracket', () => {
@@ -88,6 +100,15 @@ test('normalizes catalog fields while preserving missing-ingredient uncertainty'
   assert.ok(result?.attribution.includes('Open Food Facts'));
   assert.equal(normalizeCatalogProduct({ code: '../../bad' }), null);
   assert.equal(normalizeCatalogProduct(null), null);
+});
+
+test('keeps the product catalogue structured ingredient tree separate from label prose', () => {
+  const result = normalizeCatalogProduct({
+    code: '12345678', product_name: 'Spaghetti', ingredients_text: 'Tomatoes, pasta. Allergy advice!',
+    ingredients: [{ id: 'en:tomato', text: 'Tomatoes' }, { id: 'en:pasta', text: 'Pasta', ingredients: [{ id: 'en:durum-wheat-semolina', text: 'Durum wheat semolina' }, { id: 'en:niacin', text: 'Niacin (vitamin B3)' }] }],
+  });
+  assert.deepEqual(result?.ingredients.map(item => item.name), ['Tomatoes', 'Pasta', 'Durum wheat semolina', 'Niacin (vitamin B3)']);
+  assert(!result?.ingredients.some(item => item.name.includes('Allergy advice')));
 });
 
 test('rejects invalid product input before any network request', async () => {

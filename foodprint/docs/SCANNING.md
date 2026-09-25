@@ -10,15 +10,17 @@ The app captures an image through `expo-image-picker`, passes the resulting `fil
 
 ## Review contract
 
-`parseIngredientLabel(text, { source?, ocrConfidence? })` returns `ingredients`, `ingredientText`, `allergens`, `mayContain`, `warnings`, `hasIngredientsHeader`, `status`, and `requiresConfirmation: true`.
+`parseIngredientLabel(text, { source?, ocrConfidence?, customIngredients? })` returns `ingredients`, `ingredientText`, `allergens`, `mayContain`, `warnings`, `unrecognized`, `hasIngredientsHeader`, `status`, and `requiresConfirmation: true`.
 
-- Default/`ocr` mode requires an explicit `Ingredients:` heading or a standalone Ingredients heading. Without one, `status` is `needs-manual-selection` and no ingredients are emitted.
-- `manual` and `catalog` mode accept a previously selected ingredient field without a heading. Do not pass an entire unreviewed packet photo into these modes to bypass the heading check.
+- Default/`ocr` mode uses an Ingredients heading when present. Without one, it accepts only a dense line containing at least two complete catalogue phrases with at least 70% word coverage. Isolated words elsewhere on a packet are not promoted to ingredients.
+- `manual` mode accepts a deliberately selected ingredient field. `catalog` mode canonicalises a published ingredient declaration. Barcode entry normally uses Open Food Facts' structured `ingredients` nodes instead of reparsing prose.
 - Boundaries such as nutrition, storage, preparation, allergen advice and best-before text terminate the ingredient section. Nested parentheses and subrecipes remain intact.
 - After the declaration is parsed, `expandIngredientNames` recursively separates nested subrecipes. For example, `pasta (wheat, egg)` produces individual exposure records for `pasta`, `wheat`, and `egg`, allowing each to be analysed independently. The review remains editable because punctuation and community catalogue data can be wrong.
 - Separate `Contains` and `May contain` statements do not become ingredient tokens. Possible cross-contact is not a confirmed exposure. Absence of a declaration never proves absence of an allergen.
 - The score is OCR character confidence, never ingredient certainty or medical confidence. Low confidence and incomplete parentheses add warnings.
-- Always show editable recognized text and require an explicit save. Never auto-save a scan. The parser supports English headings; foreign labels, curved packets, glare and multi-column layouts may require manual correction.
+- Always show recognized text and require an explicit save. Text from a photo stays editable; the published label attached to a barcode record is read only. Never auto-save a scan. The parser supports English catalogue phrases; foreign labels, curved packets, glare and multi-column layouts may require manual correction.
+
+The bundled recognition catalogue is generated from the English Open Food Facts ingredient taxonomy at a pinned revision. It currently contains 4,799 canonical records plus aliases, with a curated layer for common foods and vitamin synonyms. Matching normalises aliases such as niacin/vitamin B3 to one ID, respects free-from and advisory context, and presents unknown manual terms as unknown before offering close matches or an explicit persistent personal entry.
 
 The parser does not infer hidden ingredients. Mapping confirmed label terms and uncertain recipe suggestions into food entities is a separate domain step.
 
@@ -26,7 +28,7 @@ The parser does not infer hidden ingredients. Mapping confirmed label terms and 
 
 `lookupBarcode` retrieves a product through `/api/v2/product/{code}.json`. `searchProducts` submits a plain-text query to `/cgi/search.pl`; v2 does not support full-text queries. Searches run only when the user explicitly submits them. A bounded memory cache, request deduplication, short rate-limit spacing and a 12-second timeout prevent repeated requests. The user receives actionable messages for invalid input, service limits, missing products and connection failures. [OFF API introduction and limits](https://openfoodfacts.github.io/openfoodfacts-server/api/), [official API specification](https://github.com/openfoodfacts/openfoodfacts-server/blob/main/docs/api/ref/api.yaml).
 
-Only the submitted product query/barcode is transmitted to Open Food Facts. No diary, symptom data, identifiers or images are sent. Network metadata such as the user's IP address is necessarily visible to that service. There is no local persistent copy of catalog results in this service. A confirmed product can be saved by the diary UI.
+Only the submitted product query/barcode is transmitted to Open Food Facts. No diary, symptom data, identifiers or images are sent. Network metadata such as the user's IP address is necessarily visible to that service. There is no local persistent copy of catalog results in this service. A confirmed product can be saved by the diary UI. The full published label is retained for audit, while each structured ingredient node is separately available for the diary comparison engine.
 
 Show the returned `attribution`, linked `sourceUrl`, and warnings alongside the result. Community data can be incomplete, incorrect or refer to a different regional formulation. Missing `ingredientsText` stays missing: it must not be replaced with guessed ingredient certainty. Product `traces` and allergen tags stay distinct from ingredient text. The catalog uses the Open Database License; copying or redistributing a substantial derived database needs separate license review. The current native User-Agent identifies the app as `Bellywise/1.0`; add the owner's real support URL/contact for a public release. [Open Food Facts terms](https://world.openfoodfacts.org/terms-of-use).
 

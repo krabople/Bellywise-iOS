@@ -8,6 +8,12 @@ export interface IngredientExposure {
   confidence: Confidence;
 }
 
+export interface CustomIngredientDefinition {
+  id: string;
+  name: string;
+  aliases: string[];
+}
+
 export interface Meal {
   id: string;
   name: string;
@@ -54,6 +60,8 @@ export interface AppData {
   symptoms: SymptomLog[];
   checkIns: DayCheckIn[];
   customSymptoms: SymptomDefinition[];
+  /** Personal catalogue entries explicitly added after no canonical match was found. */
+  customIngredients?: CustomIngredientDefinition[];
 }
 
 export interface FoodQuestion {

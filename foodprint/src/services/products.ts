@@ -4,6 +4,8 @@ export interface CatalogProduct {
   name: string;
   brands?: string;
   ingredientsText?: string;
+  /** Ingredient nodes parsed by Open Food Facts from the product's published label. */
+  ingredients: { id: string; name: string }[];
   allergens: string[];
   traces: string[];
   labels: string[];
@@ -23,7 +25,7 @@ export class CatalogError extends Error {
 
 export const PRODUCT_ATTRIBUTION = 'Product data: Open Food Facts contributors · Open Database License (ODbL)';
 const API_ROOT = 'https://world.openfoodfacts.org';
-const FIELDS = 'code,product_name,product_name_en,brands,ingredients_text,ingredients_text_en,allergens_tags,traces_tags,labels_tags';
+const FIELDS = 'code,product_name,product_name_en,brands,ingredients_text,ingredients_text_en,ingredients,allergens_tags,traces_tags,labels_tags';
 const USER_AGENT = 'Bellywise/1.0';
 const TIMEOUT_MS = 12000;
 const CACHE_MS = 10 * 60 * 1000;
@@ -42,6 +44,26 @@ function tagList(value: unknown): string[] {
     .map(item => item.replace(/^[a-z]{2}:/, '').replace(/-/g, ' ')) : [];
 }
 
+function structuredIngredientList(value: unknown): { id: string; name: string }[] {
+  const rows: { id: string; name: string }[] = [];
+  const visit = (node: unknown) => {
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return;
+    const item = node as Record<string, unknown>;
+    const rawId = stringField(item.id)?.replace(/^[a-z]{2}:/, '').replace(/-/g, ' ');
+    const name = stringField(item.text) ?? rawId;
+    if (name) rows.push({ id: stringField(item.id) ?? name, name });
+    if (Array.isArray(item.ingredients)) item.ingredients.forEach(visit);
+  };
+  if (Array.isArray(value)) value.forEach(visit);
+  const seen = new Set<string>();
+  return rows.filter(item => {
+    const key = `${item.id.toLowerCase()}|${item.name.toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** Exported for deterministic schema tests. Untrusted server data never becomes executable markup. */
 export function normalizeCatalogProduct(value: unknown): CatalogProduct | null {
   if (!value || typeof value !== 'object') return null;
@@ -55,7 +77,7 @@ export function normalizeCatalogProduct(value: unknown): CatalogProduct | null {
   return {
     barcode,
     name: stringField(product.product_name_en) ?? stringField(product.product_name) ?? `Product ${barcode}`,
-    brands: stringField(product.brands), ingredientsText,
+    brands: stringField(product.brands), ingredientsText, ingredients: structuredIngredientList(product.ingredients),
     allergens: tagList(product.allergens_tags), traces: tagList(product.traces_tags), labels: tagList(product.labels_tags),
     sourceUrl: `${API_ROOT}/product/${encodeURIComponent(barcode)}`,
     attribution: PRODUCT_ATTRIBUTION, warnings,

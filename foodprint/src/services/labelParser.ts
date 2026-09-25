@@ -1,4 +1,6 @@
 /** A deliberately conservative English-label parser. Every result needs human review. */
+import { matchIngredientPhrases, type IngredientRecord } from '../domain/ingredients';
+
 export type LabelSource = 'ocr' | 'manual' | 'catalog';
 
 export interface IngredientLabelResult {
@@ -8,6 +10,7 @@ export interface IngredientLabelResult {
   allergens: string[];
   mayContain: string[];
   warnings: string[];
+  unrecognized: string[];
   hasIngredientsHeader: boolean;
   ocrConfidence?: number;
   requiresConfirmation: true;
@@ -17,10 +20,11 @@ export interface IngredientLabelOptions {
   source?: LabelSource;
   /** OCR character confidence is not confidence that an ingredient is present. */
   ocrConfidence?: number;
+  customIngredients?: IngredientRecord[];
 }
 
 const HEADER = /\bingredients\s*[:：]\s*|(?:^|\n)\s*ingredients\s*\n/i;
-const SECTION = /\b(?:may\s+contain(?:\s+traces\s+of)?|contains?|allergen(?:s|\s+(?:advice|information|statement))?|for\s+allergens|nutrition(?:al)?(?:\s+(?:facts|information|values|declaration))?|typical\s+values|storage(?:\s+instructions)?|store\s+in|keep\s+(?:refrigerated|frozen)|best\s+before|use\s+by|directions(?:\s+for\s+use)?|cooking\s+instructions|preparation\s+instructions|recycling|distributed\s+by|manufactured\s+(?:by|for)|country\s+of\s+origin|net\s+(?:weight|contents)|serving\s+suggestion|ingredients\s*[:：])\b\s*[:：]?/gi;
+const SECTION = /\b(?:may\s+contain(?:\s+traces\s+of)?|contains?|allerg(?:en|y)(?:s|\s+(?:advice|information|statement))?|for\s+allergens|nutrition(?:al)?(?:\s+(?:facts|information|values|declaration))?|typical\s+values|storage(?:\s+instructions)?|store\s+in|keep\s+(?:refrigerated|frozen)|best\s+before|use\s+by|directions(?:\s+for\s+use)?|cooking\s+instructions|preparation\s+instructions|recycling|distributed\s+by|manufactured\s+(?:by|for)|country\s+of\s+origin|net\s+(?:weight|contents)|serving\s+suggestion|ingredients\s*[:：])\b\s*[:：]?/gi;
 
 function normalizeText(text: string): string {
   return text.replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
@@ -150,7 +154,7 @@ export function parseIngredientLabel(text: string, options: IngredientLabelOptio
   const confidence = typeof options.ocrConfidence === 'number' && Number.isFinite(options.ocrConfidence)
     ? Math.max(0, Math.min(1, options.ocrConfidence)) : undefined;
   const result: IngredientLabelResult = {
-    status: 'empty', ingredients: [], ingredientText: '', allergens: [], mayContain: [], warnings: [],
+    status: 'empty', ingredients: [], ingredientText: '', allergens: [], mayContain: [], warnings: [], unrecognized: [],
     hasIngredientsHeader: Boolean(header), requiresConfirmation: true,
     ...(confidence === undefined ? {} : { ocrConfidence: confidence }),
   };
@@ -163,16 +167,42 @@ export function parseIngredientLabel(text: string, options: IngredientLabelOptio
     result.warnings.push('This is too much text for one label. Select just the ingredient list before continuing.');
     return result;
   }
-  if (!header && (!options.source || options.source === 'ocr')) {
-    result.status = 'needs-manual-selection';
-    result.warnings.push('No clear Ingredients heading was found. Select or type only the ingredients before continuing.');
-    return result;
-  }
-
   const body = header ? normalized.slice(header.index + header[0].length) : normalized;
   const sections = findSections(body);
-  result.ingredientText = cleanToken(body.slice(0, sections[0]?.start ?? body.length));
-  result.ingredients = splitIngredientList(result.ingredientText);
+  result.ingredientText = body.slice(0, sections[0]?.start ?? body.length).split('\n').map(cleanToken).filter(Boolean).join('\n');
+  const rawCandidates = splitIngredientList(result.ingredientText.replace(/\n+/g, ','));
+  const custom = options.customIngredients ?? [];
+  if (!header && (!options.source || options.source === 'ocr')) {
+    // Prefer one dense label-like line. This prevents a product name or a stray
+    // marketing word elsewhere on the packet from being promoted independently.
+    const lineMatches = result.ingredientText.split(/\n+/).map(line => {
+      const candidates = splitIngredientList(line);
+      const matched = candidates.flatMap(candidate => matchIngredientPhrases(candidate, custom));
+      return { candidates, matched };
+    }).filter(line => line.matched.length >= 2)
+      .sort((a, b) => b.matched.length - a.matched.length || (b.matched.length / b.candidates.length) - (a.matched.length / a.candidates.length));
+    const best = lineMatches[0];
+    result.ingredients = best ? [...new Map(best.matched.map(record => [record.id, record.name])).values()] : [];
+    result.unrecognized = best ? best.candidates.filter(candidate => matchIngredientPhrases(candidate, custom).length === 0) : [];
+    if (result.ingredients.length < 2) {
+      result.status = 'needs-manual-selection';
+      result.ingredients = [];
+      result.warnings.push('The photo did not contain a clear run of recognised ingredient phrases. Retake it closer to the list, or add missing ingredients yourself.');
+      return result;
+    }
+    result.warnings.push('No heading was needed: Bellywise found a run of whole ingredient phrases in the catalogue. Check the recognised and omitted text before saving.');
+  } else if (options.source === 'manual') {
+    result.ingredients = rawCandidates;
+  } else {
+    const recognized: string[] = [];
+    for (const candidate of rawCandidates) {
+      const expanded = expandIngredientNames([candidate]);
+      const matches = expanded.flatMap(item => matchIngredientPhrases(item, custom));
+      if (matches.length) recognized.push(...matches.map(match => match.name));
+      else result.unrecognized.push(candidate);
+    }
+    result.ingredients = [...new Set(recognized)];
+  }
   for (let index = 0; index < sections.length; index += 1) {
     const section = sections[index];
     if (section.kind === 'other') continue;
@@ -190,6 +220,9 @@ export function parseIngredientLabel(text: string, options: IngredientLabelOptio
   if (result.mayContain.length) {
     result.warnings.push('“May contain” describes possible cross-contact, not a confirmed ingredient. It is kept separate.');
   }
+  if (result.unrecognized.length) {
+    result.warnings.push(`${result.unrecognized.length} text ${result.unrecognized.length === 1 ? 'item was' : 'items were'} not recognised as ingredients and was left out. Add any genuine missing ingredient below.`);
+  }
   const openBrackets = (result.ingredientText.match(/[([{]/g) ?? []).length;
   const closedBrackets = (result.ingredientText.match(/[)\]}]/g) ?? []).length;
   if (openBrackets !== closedBrackets) {
@@ -198,6 +231,6 @@ export function parseIngredientLabel(text: string, options: IngredientLabelOptio
   if (result.ingredientText.length > 4000 || result.ingredients.some(token => token.length > 600)) {
     result.warnings.push('This looks unusually long. Remove any packaging text that is not part of the ingredient list.');
   }
-  if (!result.ingredients.length) result.warnings.push('No ingredients were found after the heading. Try another photo.');
+  if (!result.ingredients.length) result.warnings.push('No catalogue ingredients were found. Try another photo or add them manually.');
   return result;
 }

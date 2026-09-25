@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addDays, analyzePatterns, BUILT_IN_SYMPTOMS, getDemoData, ingredientsFromNames, isDateKey, localDateKey, resolveFood } from '../src/domain';
+import { addDays, analyzePatterns, BUILT_IN_SYMPTOMS, getDemoData, ingredientsFromNames, isDateKey, localDateKey, resolveFood, suggestIngredientRecords } from '../src/domain';
 import { AppData } from '../src/domain/types';
 import { benjaminiHochberg, differenceInterval, fisherExact, wilsonInterval } from '../src/domain/statistics';
 
@@ -47,6 +47,19 @@ test('dish recipes are inferred, unknown foods preserved and questions explicit'
   const reviewed = ingredientsFromNames(['wheat flour', 'Milk', 'whole milk', 'new ingredient']);
   assert.equal(reviewed.filter(item => item.id === 'milk').length, 1);
   assert(reviewed.every(item => item.confidence === 'confirmed'));
+});
+
+test('canonical ingredient aliases collapse vitamin names without inventing free-from exposures', () => {
+  const vitamins = ingredientsFromNames(['niacin', 'B3', 'vitamin B3']);
+  assert.deepEqual(vitamins.map(item => item.id), ['niacin']);
+  assert.equal(vitamins[0].name, 'Niacin (vitamin B3)');
+  assert(!ingredientsFromNames(['gluten free']).some(item => item.id === 'wheat'));
+  assert.equal(ingredientsFromNames(['gluten-free oats'])[0].id, 'oats');
+});
+
+test('unknown manual ingredients get useful close catalogue matches', () => {
+  assert.equal(suggestIngredientRecords('niacn')[0]?.id, 'niacin');
+  assert(suggestIngredientRecords('sunflour lecithin').some(item => /sunflower lecithin/i.test(item.name)));
 });
 
 test('known Fisher, Wilson and BH numerical values', () => {

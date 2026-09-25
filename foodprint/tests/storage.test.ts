@@ -18,11 +18,23 @@ test('empty diary selects real built-in symptoms, including positive feelings', 
 test('valid complete diary survives backup roundtrip', () => {
   const state = emptyDiary();
   state.data.customSymptoms.push({ id: 'custom-1', name: 'Rested', kind: 'positive' });
+  state.data.customIngredients?.push({ id: 'personal-sunflower-lecithin', name: 'Sunflower lecithin', aliases: ['sunflower lecithin'] });
   state.selectedSymptoms.push('custom-1');
   state.data.meals.push({ id: 'm1', name: 'Rice', eatenAt: '2026-09-18T12:30:00.000Z', ingredients: [{ id: 'rice', name: 'Rice', confidence: 'confirmed' }], source: 'typed' });
   state.data.symptoms.push({ id: 's1', symptomId: 'custom-1', occurredAt: '2026-09-18T14:00:00+01:00', severity: 2 });
   state.data.checkIns.push({ date: '2024-02-29', complete: true, stress: 2, sleepHours: 7.5 });
   assert.deepEqual(parseDiary(JSON.stringify(state)), state);
+});
+
+test('accepts older backups without a personal ingredient catalogue', () => {
+  const state = emptyDiary();
+  delete state.data.customIngredients;
+  assert.deepEqual(parseDiary(JSON.stringify(state)), state);
+});
+
+test('rejects invalid or duplicate personal ingredients', () => {
+  assert.throws(parseModified(state => { state.data.customIngredients = [{ id: 'personal-one', name: '', aliases: [] }]; }), /invalid custom ingredient/);
+  assert.throws(parseModified(state => { state.data.customIngredients = [{ id: 'personal-one', name: 'One', aliases: ['one'] }, { id: 'personal-one', name: 'Two', aliases: ['two'] }]; }), /duplicate custom ingredient IDs/);
 });
 
 test('rejects impossible calendar dates and duplicate daily check-ins', () => {

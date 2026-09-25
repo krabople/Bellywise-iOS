@@ -1,47 +1,9 @@
 import { Confidence, FoodResolution, IngredientExposure } from './types';
 
-interface IngredientRecord { id: string; name: string; aliases: string[] }
-const INGREDIENT_ROWS: [string, string, string[]?][] = [
-  ['wheat', 'Wheat', ['wheat flour', 'semolina', 'durum wheat', 'spelt', 'bulgur', 'couscous']],
-  ['barley', 'Barley', ['barley malt', 'malt extract']], ['rye', 'Rye'], ['oats', 'Oats', ['oat', 'oat flour']],
-  ['rice', 'Rice', ['rice flour', 'brown rice']], ['maize', 'Maize / corn', ['maize', 'corn', 'cornflour', 'corn starch', 'corn flour']],
-  ['tapioca', 'Tapioca', ['tapioca starch']], ['potato', 'Potato', ['potatoes', 'potato starch']],
-  ['milk', 'Milk', ['dairy', 'whole milk', 'skimmed milk', 'semi skimmed milk', 'semi-skimmed milk', 'skim milk', 'lactose free milk', 'milk powder', 'whole milk powder', 'skimmed milk powder', 'skim milk powder', 'milk solids', 'whey', 'whey powder', 'casein', 'caseinate', 'buttermilk', 'cream', 'double cream', 'single cream', 'cheese', 'parmesan', 'mozzarella', 'butter', 'ghee']],
-  ['lactose', 'Lactose', ['milk sugar']], ['egg', 'Egg', ['eggs', 'egg white', 'egg yolk']],
-  ['soy', 'Soy', ['soya', 'soybean', 'soya flour', 'soy flour', 'tofu', 'tempeh', 'edamame']],
-  ['peanut', 'Peanut', ['peanuts', 'groundnut', 'peanut butter']], ['almond', 'Almond', ['almonds', 'almond butter']],
-  ['hazelnut', 'Hazelnut', ['hazelnuts']], ['walnut', 'Walnut', ['walnuts']], ['cashew', 'Cashew', ['cashews', 'cashew butter']],
-  ['coconut', 'Coconut', ['coconut milk', 'coconut cream', 'coconut oil']], ['sesame', 'Sesame', ['tahini', 'sesame seeds']],
-  ['mustard', 'Mustard'], ['celery', 'Celery'], ['onion', 'Onion', ['onions', 'shallot', 'shallots', 'onion powder']],
-  ['garlic', 'Garlic', ['garlic powder']], ['tomato', 'Tomato', ['tomatoes', 'tomato puree', 'passata']],
-  ['carrot', 'Carrot', ['carrots']], ['broccoli', 'Broccoli'], ['cauliflower', 'Cauliflower'], ['mushroom', 'Mushroom', ['mushrooms']],
-  ['spinach', 'Spinach'], ['pepper', 'Bell pepper', ['bell pepper', 'bell peppers', 'capsicum']], ['cucumber', 'Cucumber'],
-  ['lettuce', 'Lettuce'], ['cabbage', 'Cabbage'], ['courgette', 'Courgette', ['zucchini']], ['aubergine', 'Aubergine', ['eggplant']],
-  ['leek', 'Leek', ['leeks']], ['pea', 'Peas', ['peas', 'green peas']], ['sweetcorn', 'Sweetcorn'],
-  ['lentil', 'Lentils', ['lentils']], ['chickpea', 'Chickpeas', ['chickpeas', 'chickpea flour', 'gram flour']],
-  ['bean', 'Beans', ['kidney beans', 'black beans', 'white beans', 'haricot beans', 'baked beans']],
-  ['apple', 'Apple', ['apples']], ['pear', 'Pear', ['pears']], ['banana', 'Banana', ['bananas']],
-  ['orange', 'Orange', ['oranges']], ['lemon', 'Lemon', ['lemon juice']], ['lime', 'Lime'], ['grape', 'Grapes', ['grapes']],
-  ['strawberry', 'Strawberries', ['strawberries']], ['blueberry', 'Blueberries', ['blueberries']], ['raspberry', 'Raspberries', ['raspberries']],
-  ['mango', 'Mango'], ['avocado', 'Avocado'], ['date', 'Dates', ['dates']], ['raisin', 'Raisins', ['raisins']],
-  ['beef', 'Beef'], ['chicken', 'Chicken'], ['pork', 'Pork', ['bacon', 'ham']], ['lamb', 'Lamb'], ['turkey', 'Turkey'],
-  ['fish', 'Fish', ['salmon', 'tuna', 'cod', 'haddock', 'anchovy', 'anchovies']],
-  ['shellfish', 'Shellfish', ['prawn', 'prawns', 'shrimp', 'crab', 'lobster', 'mussel', 'mussels']],
-  ['olive-oil', 'Olive oil', ['extra virgin olive oil']], ['vegetable-oil', 'Vegetable oil', ['sunflower oil', 'rapeseed oil', 'canola oil']],
-  ['sugar', 'Sugar', ['sucrose', 'cane sugar', 'brown sugar', 'glucose', 'glucose syrup']], ['honey', 'Honey'],
-  ['maple', 'Maple syrup'], ['cocoa', 'Cocoa', ['cacao', 'cocoa powder']], ['coffee', 'Coffee', ['ground coffee', 'roast ground coffee', 'roasted ground coffee', 'instant coffee']], ['tea', 'Tea', ['black tea', 'green tea']],
-  ['caffeine', 'Caffeine'], ['carbonation', 'Carbonation', ['carbon dioxide', 'carbonated water']],
-  ['peppermint', 'Peppermint'], ['chamomile', 'Chamomile', ['camomile']],
-  ['alcohol', 'Alcohol', ['ethanol']], ['sorbitol', 'Sorbitol', ['e420']], ['mannitol', 'Mannitol', ['e421']],
-  ['xylitol', 'Xylitol', ['e967']], ['erythritol', 'Erythritol', ['e968']], ['inulin', 'Inulin', ['chicory root fibre', 'chicory root fiber']],
-  ['yeast', 'Yeast'], ['salt', 'Salt'], ['vinegar', 'Vinegar'], ['chilli', 'Chilli', ['chili', 'chilli pepper']],
-  ['ginger', 'Ginger'], ['cumin', 'Cumin'], ['coriander', 'Coriander', ['cilantro']], ['basil', 'Basil'], ['oregano', 'Oregano'],
-  ['quinoa', 'Quinoa'], ['buckwheat', 'Buckwheat'], ['water', 'Water'],
-];
+import { findIngredientRecord, ingredientCatalog, ingredientFromText, ingredientsFromNames, normalizeIngredientText } from './ingredients';
+export { ingredientCatalog, ingredientFromText, ingredientsFromNames } from './ingredients';
 
-export const ingredientCatalog: IngredientRecord[] = INGREDIENT_ROWS.map(([id, name, aliases = []]) => ({ id, name, aliases: [name.toLowerCase(), ...aliases] }));
-const byId = new Map(ingredientCatalog.map(item => [item.id, item]));
-const normalize = (text: string) => text.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[’']/g, '').replace(/[-–—]/g, ' ').replace(/\s+/g, ' ').trim();
+const normalize = normalizeIngredientText;
 
 /** Recipes are editable hypotheses, not brand-specific ingredient lists. */
 const RECIPES: { names: string[]; ingredients: string[]; question?: 'grain' | 'milk' | 'cola' }[] = [
@@ -151,25 +113,8 @@ const grainOptions = [{ id: 'standard', label: 'Regular recipe' }, { id: 'gluten
 const milkOptions = [{ id: 'standard', label: 'Regular dairy' }, { id: 'lactose-free', label: 'Lactose-free dairy' }, { id: 'oat', label: 'Oat' }, { id: 'soy', label: 'Soy' }, { id: 'almond', label: 'Almond' }, { id: 'dairy-free', label: 'Other dairy-free' }];
 
 function makeIngredient(id: string, confidence: Confidence = 'inferred'): IngredientExposure {
-  const known = byId.get(id);
+  const known = ingredientCatalog.find(item => item.id === id) ?? findIngredientRecord(id);
   return { id, name: known?.name ?? id, confidence };
-}
-
-export function ingredientFromText(text: string, confidence: Confidence = 'confirmed'): IngredientExposure {
-  const clean = normalize(text.replace(/\([^)]*\)/g, '').replace(/\b\d+(?:\.\d+)?\s*%/g, '').replace(/\b(?:organic|pasteurised|pasteurized|fortified|enriched|dried|fresh)\b/gi, '').trim());
-  const known = ingredientCatalog.find(item => item.id === clean || item.aliases.some(alias => normalize(alias) === clean));
-  return known ? makeIngredient(known.id, confidence) : {
-    id: `custom-${clean.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'ingredient'}`,
-    name: text.trim(), confidence,
-  };
-}
-
-/** Label tokens are explicit observations only after the user reviews the scan. */
-export function ingredientsFromNames(names: string[], confidence: Confidence = 'confirmed'): IngredientExposure[] {
-  return [...new Map(names.map(name => name.trim()).filter(Boolean).map(name => {
-    const ingredient = ingredientFromText(name, confidence);
-    return [ingredient.id, ingredient] as const;
-  })).values()];
 }
 
 /** Resolve whole dish names before individual words, so peanut butter never becomes dairy. */
