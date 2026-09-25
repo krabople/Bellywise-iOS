@@ -14,6 +14,13 @@ const required = (env, name) => {
 
 const linkage = (type, id) => ({ type, id });
 
+export function classifyTesterInvitationError(error) {
+  const message = String(error?.message || '');
+  if (message.includes('STATE_ERROR.TESTER_INVITE.NO_INSTALLABLE_BUILDS')) return 'deferred';
+  if (message.includes('STATE_ERROR.TESTER_INVITE.ALREADY_ACCEPTED')) return 'already-accepted';
+  return null;
+}
+
 export async function releaseExternalBeta({ api, appId, buildId, groupId, testerEmail }) {
   const normalizedEmail = testerEmail.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) throw new Error('The configured tester email is invalid.');
@@ -97,6 +104,7 @@ export async function releaseExternalBeta({ api, appId, buildId, groupId, tester
 
   let invitation = null;
   let invitationDeferredUntilBuildInstallable = false;
+  let invitationAlreadyAccepted = false;
   try {
     invitation = await api.request('/v1/betaTesterInvitations', 'POST', {
       data: {
@@ -108,9 +116,13 @@ export async function releaseExternalBeta({ api, appId, buildId, groupId, tester
       },
     });
   } catch (error) {
-    if (String(error?.message || '').includes('STATE_ERROR.TESTER_INVITE.NO_INSTALLABLE_BUILDS')) {
+    const invitationError = classifyTesterInvitationError(error);
+    if (invitationError === 'deferred') {
       // The first external build must pass Beta App Review. autoNotifyEnabled queues the email for approval.
       invitationDeferredUntilBuildInstallable = true;
+    } else if (invitationError === 'already-accepted') {
+      // Apple rejects duplicate invitations after a tester has already accepted access.
+      invitationAlreadyAccepted = true;
     } else {
       throw error;
     }
@@ -140,10 +152,11 @@ export async function releaseExternalBeta({ api, appId, buildId, groupId, tester
     invitationRequested: invitation?.data?.type === 'betaTesterInvitations',
     invitationId: invitation?.data?.id || null,
     invitationDeferredUntilBuildInstallable,
+    invitationAlreadyAccepted,
     verifiedAt: new Date().toISOString(),
   };
   if (!result.buildAssignedToExternalGroup || !result.autoNotifyEnabled || !result.testerAssignedToExternalGroup
-    || (!result.invitationRequested && !result.invitationDeferredUntilBuildInstallable)) {
+    || (!result.invitationRequested && !result.invitationDeferredUntilBuildInstallable && !result.invitationAlreadyAccepted)) {
     throw new Error('Apple did not confirm every requested TestFlight relationship.');
   }
   return result;
