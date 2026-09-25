@@ -77,6 +77,8 @@ const CORE_ROWS: [string, string, string[]?][] = [
 ];
 
 const core = CORE_ROWS.map(([id, name, aliases = []]) => ({ id, name, aliases: [...new Set([name, ...aliases].map(normalizeIngredientText))] }));
+const coreAliasOwner = new Map<string, IngredientRecord>();
+for (const record of core) for (const alias of record.aliases) coreAliasOwner.set(alias, record);
 const aliasOwner = new Map<string, IngredientRecord>();
 for (const record of core) for (const alias of record.aliases) aliasOwner.set(alias, record);
 const combined: IngredientRecord[] = [...core];
@@ -106,17 +108,47 @@ for (const record of ingredientCatalog) for (const alias of record.aliases) {
 }
 const maxAliasWords = Math.max(...[...searchableAliases.keys()].map(alias => alias.split(' ').length));
 
+// These preparation/appearance words do not turn a food into a different
+// substance for diary correlation. The parent relationship must also point to
+// one of our curated food families, so an arbitrary shared word cannot merge
+// unrelated records. Transformations such as oil, extract, flavouring,
+// fermented or hydrolysed deliberately remain separate.
+const FAMILY_MODIFIERS = new Set([
+  'fresh', 'raw', 'dried', 'dry', 'dehydrated', 'freeze', 'frozen', 'freeze-dried',
+  'whole', 'chopped', 'minced', 'sliced', 'crushed', 'ground', 'grated', 'peeled',
+  'powder', 'powdered', 'puree', 'pureed', 'paste', 'roasted', 'toasted', 'cooked',
+  'red', 'green', 'yellow', 'white', 'brown', 'orange', 'purple', 'ripe', 'unripe',
+  'unsweetened', 'sweetened',
+]);
+
+function canonicalFamily(record: IngredientRecord): IngredientRecord {
+  const nameWords = normalizeIngredientText(record.name).split(' ').filter(Boolean);
+  for (const parent of record.parents ?? []) {
+    const parentName = normalizeIngredientText(parent);
+    const family = coreAliasOwner.get(parentName);
+    if (!family) continue;
+    const parentWords = parentName.split(' ');
+    for (let start = 0; start <= nameWords.length - parentWords.length; start += 1) {
+      if (!parentWords.every((word, index) => nameWords[start + index] === word)) continue;
+      const modifiers = [...nameWords.slice(0, start), ...nameWords.slice(start + parentWords.length)];
+      if (modifiers.length > 0 && modifiers.every(word => FAMILY_MODIFIERS.has(word))) return family;
+    }
+  }
+  return record;
+}
+
 const exclusions = /^(?:gluten|dairy|lactose|milk|nut|nuts|sugar|alcohol|caffeine)\s+free$|^(?:free\s+from|without|no|no\s+added|does\s+not\s+contain)\b/;
 const stripQualifiers = (value: string) => normalizeIngredientText(value
   .replace(/\b\d+(?:\.\d+)?\s*%\b/g, '')
-  .replace(/\b(?:organic|pasteurised|pasteurized|fortified|enriched|dried|fresh|powdered|ground|chopped|concentrated)\b/gi, ''));
+  .replace(/\b(?:organic|pasteurised|pasteurized|fortified|enriched|fresh|raw|dried|dry|dehydrated|freeze[ -]dried|frozen|whole|chopped|minced|sliced|crushed|ground|grated|peeled|powdered|roasted|toasted|cooked|red|green|yellow|white|brown|orange|purple|ripe|unripe|unsweetened|sweetened|concentrated)\b/gi, ''));
 
 export function findIngredientRecord(value: string, custom: IngredientRecord[] = []): IngredientRecord | undefined {
   const normalized = normalizeIngredientText(value);
   if (!normalized || exclusions.test(normalized)) return undefined;
   const clean = stripQualifiers(value.replace(/\([^)]*\)/g, '')).replace(/^gluten\s+free\s+/, '');
   const customMatch = custom.find(record => [record.name, ...record.aliases].some(alias => normalizeIngredientText(alias) === clean));
-  return customMatch ?? aliasOwner.get(clean) ?? byId.get(clean) ?? byId.get(normalized.replace(/^en /, ''));
+  const match = customMatch ?? aliasOwner.get(clean) ?? byId.get(clean) ?? byId.get(normalized.replace(/^en /, ''));
+  return match && !customMatch ? canonicalFamily(match) : match;
 }
 
 /**
@@ -139,7 +171,7 @@ export function matchIngredientPhrases(value: string, custom: IngredientRecord[]
       found = custom.find(record => [record.name, ...record.aliases].some(alias => normalizeIngredientText(alias) === phrase)) ?? searchableAliases.get(phrase);
       if (found) { used = size; break; }
     }
-    if (found) { matches.push({ record: found, words: used }); matchedWords += used; index += used; }
+    if (found) { matches.push({ record: canonicalFamily(found), words: used }); matchedWords += used; index += used; }
     else index += 1;
   }
   if (matches.length < 2 || matchedWords / Math.max(1, words.length) < 0.7) return [];
@@ -162,14 +194,21 @@ function diceSimilarity(a: string, b: string): number {
 export function suggestIngredientRecords(value: string, limit = 5, custom: IngredientRecord[] = []): IngredientRecord[] {
   const query = normalizeIngredientText(value);
   if (query.length < 2) return [];
-  return [...custom, ...ingredientCatalog].map(record => {
+  const ranked = [...custom, ...ingredientCatalog].map(record => {
     const score = Math.max(...[record.name, ...record.aliases].map(alias => {
       const candidate = normalizeIngredientText(alias);
       const containment = candidate.includes(query) || query.includes(candidate) ? Math.min(candidate.length, query.length) / Math.max(candidate.length, query.length) : 0;
       return Math.max(containment, diceSimilarity(query, candidate));
     }));
     return { record, score };
-  }).filter(item => item.score >= 0.36).sort((a, b) => b.score - a.score || a.record.name.localeCompare(b.record.name)).slice(0, limit).map(item => item.record);
+  }).filter(item => item.score >= 0.36).sort((a, b) => b.score - a.score || a.record.name.localeCompare(b.record.name));
+  const distinct = new Map<string, IngredientRecord>();
+  for (const item of ranked) {
+    const record = custom.includes(item.record) ? item.record : canonicalFamily(item.record);
+    if (!distinct.has(record.id)) distinct.set(record.id, record);
+    if (distinct.size >= limit) break;
+  }
+  return [...distinct.values()];
 }
 
 export function ingredientFromText(text: string, confidence: Confidence = 'confirmed', custom: IngredientRecord[] = []): IngredientExposure {

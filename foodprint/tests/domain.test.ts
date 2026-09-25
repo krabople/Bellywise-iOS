@@ -57,6 +57,16 @@ test('canonical ingredient aliases collapse vitamin names without inventing free
   assert.equal(ingredientsFromNames(['gluten-free oats'])[0].id, 'oats');
 });
 
+test('preparation variants share a food family while materially different derivatives remain distinct', () => {
+  const garlic = ingredientsFromNames(['garlic', 'fresh garlic', 'dried garlic', 'garlic powder']);
+  assert.deepEqual(garlic.map(item => item.id), ['garlic']);
+  assert.deepEqual(ingredientsFromNames(['strawberries', 'raw strawberry', 'frozen strawberries']).map(item => item.id), ['strawberry']);
+  assert.equal(ingredientsFromNames(['fresh onion', 'red onion'])[0].id, 'onion');
+  assert.notEqual(ingredientsFromNames(['garlic oil'])[0].id, 'garlic');
+  assert.notEqual(ingredientsFromNames(['wild garlic'])[0].id, 'garlic');
+  assert.equal(suggestIngredientRecords('fresh garlic')[0]?.id, 'garlic');
+});
+
 test('unknown manual ingredients get useful close catalogue matches', () => {
   assert.equal(suggestIngredientRecords('niacn')[0]?.id, 'niacin');
   assert(suggestIngredientRecords('sunflour lecithin').some(item => /sunflower lecithin/i.test(item.name)));
