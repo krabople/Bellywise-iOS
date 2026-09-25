@@ -10,6 +10,10 @@ on:
         required: true
         default: main
         type: string
+      build_id:
+        description: Exact App Store Connect build resource ID
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -48,7 +52,7 @@ jobs:
           APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
           TESTFLIGHT_TESTER_EMAIL: ${{ secrets.BELLYWISE_EXTERNAL_TESTER_EMAIL }}
           APPSTORE_APP_ID: '6813854695'
-          APPSTORE_BUILD_ID: a452b284-2e07-4a4c-9a23-13523d897734
+          APPSTORE_BUILD_ID: ${{ inputs.build_id }}
           APPSTORE_EXTERNAL_GROUP_ID: df15b1e6-e7b2-483e-aec3-3011b451dbdc
         run: |
           set -euo pipefail

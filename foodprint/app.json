@@ -17,6 +17,7 @@
       "buildNumber": "1",
       "appleTeamId": "6YYA8L76Y8",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Scan product barcodes and photograph ingredient lists so Bellywise can help you log food and drinks.",
         "NSPhotoLibraryUsageDescription": "Choose an ingredient-label photo to read privately on this device."
       }
