@@ -25,9 +25,10 @@ export async function releaseExternalBeta({ api, appId, buildId, groupId, tester
   const normalizedEmail = testerEmail.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) throw new Error('The configured tester email is invalid.');
 
-  const [buildResponse, groupResponse, localizationResponse, reviewDetailResponse] = await Promise.all([
+  const [buildResponse, groupResponse, allGroupsResponse, localizationResponse, reviewDetailResponse] = await Promise.all([
     api.request(`/v1/builds/${encodeURIComponent(buildId)}?include=app,buildBetaDetail`),
     api.request(`/v1/betaGroups/${encodeURIComponent(groupId)}?include=app`),
+    api.request(`/v1/apps/${encodeURIComponent(appId)}/betaGroups?limit=200`),
     api.request(`/v1/apps/${encodeURIComponent(appId)}/betaAppLocalizations?limit=200`),
     api.request(`/v1/apps/${encodeURIComponent(appId)}/betaAppReviewDetail`),
   ]);
@@ -38,6 +39,9 @@ export async function releaseExternalBeta({ api, appId, buildId, groupId, tester
   if (build.attributes?.processingState !== 'VALID' || build.attributes?.expired) throw new Error('The configured build is not a valid, unexpired build.');
   if (group?.type !== 'betaGroups' || group.relationships?.app?.data?.id !== appId) throw new Error('The configured beta group does not belong to the configured app.');
   if (group.attributes?.isInternalGroup) throw new Error('The configured beta group is internal, not external.');
+  const internalGroups = (allGroupsResponse.data || []).filter((item) => item.attributes?.isInternalGroup === true);
+  if (internalGroups.length !== 1) throw new Error(`Expected exactly one internal beta group; found ${internalGroups.length}.`);
+  const internalGroupId = internalGroups[0].id;
   if (!Array.isArray(localizationResponse.data) || !localizationResponse.data.some((item) => item.attributes?.description?.trim())) {
     throw new Error('A beta app localization description is required before external review.');
   }
@@ -63,6 +67,12 @@ export async function releaseExternalBeta({ api, appId, buildId, groupId, tester
   const existingGroupBuilds = await api.request(`/v1/betaGroups/${encodeURIComponent(groupId)}/relationships/builds?limit=200`);
   if (!existingGroupBuilds.data?.some((item) => item.id === buildId)) {
     await api.request(`/v1/betaGroups/${encodeURIComponent(groupId)}/relationships/builds`, 'POST', {
+      data: [linkage('builds', buildId)],
+    });
+  }
+  const existingInternalBuilds = await api.request(`/v1/betaGroups/${encodeURIComponent(internalGroupId)}/relationships/builds?limit=200`);
+  if (!existingInternalBuilds.data?.some((item) => item.id === buildId)) {
+    await api.request(`/v1/betaGroups/${encodeURIComponent(internalGroupId)}/relationships/builds`, 'POST', {
       data: [linkage('builds', buildId)],
     });
   }
@@ -132,6 +142,7 @@ export async function releaseExternalBeta({ api, appId, buildId, groupId, tester
   const finalTester = await api.request(`/v1/betaTesters/${encodeURIComponent(tester.id)}?include=betaGroups`);
   const finalDetail = await api.request(`/v1/buildBetaDetails/${encodeURIComponent(betaDetailId)}`);
   const groupBuilds = await api.request(`/v1/betaGroups/${encodeURIComponent(groupId)}/relationships/builds?limit=200`);
+  const internalGroupBuilds = await api.request(`/v1/betaGroups/${encodeURIComponent(internalGroupId)}/relationships/builds?limit=200`);
   const testerGroups = await api.request(`/v1/betaTesters/${encodeURIComponent(tester.id)}/relationships/betaGroups?limit=200`);
   const finalSubmission = submissions.data?.[0] || submission;
 
@@ -141,6 +152,8 @@ export async function releaseExternalBeta({ api, appId, buildId, groupId, tester
     buildNumber: build.attributes?.version || null,
     groupId,
     buildAssignedToExternalGroup: !!groupBuilds.data?.some((item) => item.id === buildId),
+    internalGroupId,
+    buildAssignedToInternalGroup: !!internalGroupBuilds.data?.some((item) => item.id === buildId),
     autoNotifyEnabled: finalDetail.data?.attributes?.autoNotifyEnabled === true,
     externalBuildState: finalDetail.data?.attributes?.externalBuildState || null,
     betaReviewState: finalSubmission?.attributes?.betaReviewState || null,
@@ -155,7 +168,7 @@ export async function releaseExternalBeta({ api, appId, buildId, groupId, tester
     invitationAlreadyAccepted,
     verifiedAt: new Date().toISOString(),
   };
-  if (!result.buildAssignedToExternalGroup || !result.autoNotifyEnabled || !result.testerAssignedToExternalGroup
+  if (!result.buildAssignedToExternalGroup || !result.buildAssignedToInternalGroup || !result.autoNotifyEnabled || !result.testerAssignedToExternalGroup
     || (!result.invitationRequested && !result.invitationDeferredUntilBuildInstallable && !result.invitationAlreadyAccepted)) {
     throw new Error('Apple did not confirm every requested TestFlight relationship.');
   }
