@@ -37,6 +37,14 @@ test('rejects invalid or duplicate personal ingredients', () => {
   assert.throws(parseModified(state => { state.data.customIngredients = [{ id: 'personal-one', name: 'One', aliases: ['one'] }, { id: 'personal-one', name: 'Two', aliases: ['two'] }]; }), /duplicate custom ingredient IDs/);
 });
 
+test('notification choices survive backups and reject invalid times or duplicate pattern keys', () => {
+  const state = emptyDiary();
+  state.data.notificationPreferences = { dailyReminderEnabled: true, dailyReminderHour: 19, dailyReminderMinute: 45, dailyReminderId: 'local-reminder-1', patternAlertsEnabled: true, notifiedPatternKeys: ['garlic|bloating'] };
+  assert.deepEqual(parseDiary(JSON.stringify(state)), state);
+  assert.throws(parseModified(value => { value.data.notificationPreferences = { dailyReminderEnabled: true, dailyReminderHour: 24, dailyReminderMinute: 0, patternAlertsEnabled: false, notifiedPatternKeys: [] }; }), /invalid notification preferences/);
+  assert.throws(parseModified(value => { value.data.notificationPreferences = { dailyReminderEnabled: false, dailyReminderHour: 20, dailyReminderMinute: 0, patternAlertsEnabled: true, notifiedPatternKeys: ['one', 'one'] }; }), /invalid notification preferences/);
+});
+
 test('rejects impossible calendar dates and duplicate daily check-ins', () => {
   assert.throws(parseModified(state => state.data.checkIns.push({ date: '2026-02-31', complete: true, stress: 2 })), /invalid check-in/);
   assert.throws(parseModified(state => state.data.checkIns.push({ date: '2026-02-01', complete: true, stress: 2 }, { date: '2026-02-01', complete: false, stress: 3 })), /same date/);

@@ -9,7 +9,7 @@ export interface SavedDiary {
   welcomed: boolean;
 }
 
-export const emptyData = (): AppData => ({ meals: [], symptoms: [], checkIns: [], customSymptoms: [], customIngredients: [] });
+export const emptyData = (): AppData => ({ meals: [], symptoms: [], checkIns: [], customSymptoms: [], customIngredients: [], notificationPreferences: { dailyReminderEnabled: false, dailyReminderHour: 20, dailyReminderMinute: 0, patternAlertsEnabled: false, notifiedPatternKeys: [] } });
 export const emptyDiary = (): SavedDiary => ({ version: 1, data: emptyData(), selectedSymptoms: ['bloating', 'abdominal-pain', 'nausea', 'fatigue', 'energy', 'comfortable'], welcomed: false });
 
 const record = (value: unknown): value is Record<string, any> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -36,6 +36,10 @@ export function parseDiary(raw: string): SavedDiary {
   if (!d.checkIns.every(c => record(c) && calendarDate(c.date) && c.date <= localDateKey(new Date()) && typeof c.complete === 'boolean' && (c.trackedSymptomIds === undefined || (list(c.trackedSymptomIds) && c.trackedSymptomIds.every(identifier) && new Set(c.trackedSymptomIds).size === c.trackedSymptomIds.length)) && level(c.stress) && (c.sleepHours === undefined || (Number.isFinite(c.sleepHours) && c.sleepHours >= 0 && c.sleepHours <= 24)) && optionalText(c.notes))) throw new Error('The backup contains an invalid check-in.');
   if (!d.customSymptoms.every(s => record(s) && identifier(s.id) && name(s.name, 80) && ['negative', 'positive'].includes(s.kind) && (s.icon === undefined || text(s.icon, 120)))) throw new Error('The backup contains an invalid custom symptom.');
   if (d.customIngredients !== undefined && (!list(d.customIngredients) || !d.customIngredients.every(i => record(i) && identifier(i.id) && name(i.name, 160) && list(i.aliases) && i.aliases.every((alias: unknown) => name(alias, 160))))) throw new Error('The backup contains an invalid custom ingredient.');
+  if (d.notificationPreferences !== undefined) {
+    const n = d.notificationPreferences;
+    if (!record(n) || typeof n.dailyReminderEnabled !== 'boolean' || !Number.isInteger(n.dailyReminderHour) || n.dailyReminderHour < 0 || n.dailyReminderHour > 23 || !Number.isInteger(n.dailyReminderMinute) || n.dailyReminderMinute < 0 || n.dailyReminderMinute > 59 || (n.dailyReminderId !== undefined && !identifier(n.dailyReminderId)) || typeof n.patternAlertsEnabled !== 'boolean' || !list(n.notifiedPatternKeys) || !n.notifiedPatternKeys.every(identifier) || new Set(n.notifiedPatternKeys).size !== n.notifiedPatternKeys.length) throw new Error('The backup contains invalid notification preferences.');
+  }
   for (const rows of [d.meals, d.symptoms, d.customSymptoms]) {
     if (new Set(rows.map((r: any) => r.id)).size !== rows.length) throw new Error('This backup contains duplicate entry IDs.');
   }

@@ -36,6 +36,13 @@ English label headings are supported. Foreign labels, tiny print, curved packagi
 
 Patterns are observational clues, not a diagnosis, a probability of intolerance or a treatment plan. Positive feelings do not establish food safety. The method has not been clinically validated; see [METHOD.md](../src/domain/METHOD.md).
 
+## Local notifications
+
+- In **My space → Choose notifications**, enable a daily reminder, select a time a few minutes ahead and save. Confirm the iOS permission prompt appears only after enabling an option, and that the reminder arrives. Change the time, then turn it off and confirm the old schedule does not fire.
+- Enable **New pattern alerts**. Existing emerging patterns should be treated as already seen when the option is first enabled. A later comparison that newly reaches **Worth a closer look** should produce one local alert and should not alert repeatedly when the app reopens.
+- Deny notification access and check that Bellywise explains how to enable it in iOS Settings. Notification choices should survive relaunch and backup validation. Example-diary mode must not change personal notification schedules.
+- These checks use local scheduling only. The implementation must not request an Expo/APNs device push token or upload diary/pattern content to a notification service. Lock-screen text can reveal that a pattern exists, so verify the privacy explanation before opting in.
+
 ## Backup and privacy
 
 - Exit demo. In **My space**, **Save backup** to Files and **Export a report**. The JSON backup is restorable; the readable text report is for review/sharing. Both are unencrypted and may contain health information.

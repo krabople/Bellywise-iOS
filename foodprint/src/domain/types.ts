@@ -14,6 +14,15 @@ export interface CustomIngredientDefinition {
   aliases: string[];
 }
 
+export interface NotificationPreferences {
+  dailyReminderEnabled: boolean;
+  dailyReminderHour: number;
+  dailyReminderMinute: number;
+  dailyReminderId?: string;
+  patternAlertsEnabled: boolean;
+  notifiedPatternKeys: string[];
+}
+
 export interface Meal {
   id: string;
   name: string;
@@ -62,6 +71,8 @@ export interface AppData {
   customSymptoms: SymptomDefinition[];
   /** Personal catalogue entries explicitly added after no canonical match was found. */
   customIngredients?: CustomIngredientDefinition[];
+  /** Optional local-only reminder and on-device pattern alert preferences. */
+  notificationPreferences?: NotificationPreferences;
 }
 
 export interface FoodQuestion {

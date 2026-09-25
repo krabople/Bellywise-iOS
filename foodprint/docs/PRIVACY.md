@@ -16,6 +16,10 @@ In the native iOS app, the intended storage uses an encrypted local database wit
 
 The browser preview uses browser local storage and does not provide the native encrypted database. Anyone with access to that browser profile may be able to read it, and clearing browser data may remove it. Use fictional information when trying a preview on a shared computer.
 
+## Optional local notifications
+
+If you enable notifications, Bellywise can schedule a daily journal reminder at the time you choose. It can also notify you when an on-device diary comparison first passes the app's stronger pattern checks. These are local notifications: Bellywise does not obtain a remote push token, register with an Expo notification server or send diary and pattern data to a developer server. Notification text may appear on your lock screen according to your iOS notification and Focus settings. You can turn either option off in Bellywise or revoke notification access in iOS Settings.
+
 ## Camera and ingredient recognition
 
 Camera access is optional and is used when you choose to capture an ingredients label. Text recognition runs on the device. Label photographs are not uploaded to the developer or Open Food Facts. The app uses a temporary image for recognition and removes its temporary copy after processing; it stores the ingredient text you choose to save. An image that you selected from another app or your photo library remains under that app's control. You can deny or revoke camera access in system settings and continue typing entries.
@@ -44,7 +48,7 @@ If data practices change, this notice will be updated with a new effective date.
 
 ## Developer release worksheet — not public policy text
 
-The statements above must be reconciled against the signed release build. Verify native database encryption and key handling, camera-image cleanup on success and error, export contents and temporary files, backup behaviour, every runtime network endpoint, and all dependencies. Confirm deletion behaviour without claiming secure erasure of copies outside the app. Check whether Expo services or any later diagnostics/update SDK are enabled at runtime and revise this notice if needed.
+The statements above must be reconciled against the signed release build. Verify native database encryption and key handling, camera-image cleanup on success and error, local notification scheduling without remote token registration, export contents and temporary files, backup behaviour, every runtime network endpoint, and all dependencies. Confirm deletion behaviour without claiming secure erasure of copies outside the app. Check whether Expo services or any later diagnostics/update SDK are enabled at runtime and revise this notice if needed.
 
 Do not claim that no data leaves the device: the optional Open Food Facts request does. Confirm the provider's retention of search terms, barcodes and IP addresses. Assess relevant App Store privacy categories and purposes for that behaviour; optional use alone does not automatically make a disclosure optional. Apple distinguishes device-only processing from off-device retention, and requires third-party collection to be considered. [Apple App Privacy Details](https://developer.apple.com/app-store/app-privacy-details/)
 

@@ -3,23 +3,27 @@ import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, StatusBar,
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts, DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold } from '@expo-google-fonts/dm-sans';
 import { Lora_400Regular, Lora_500Medium } from '@expo-google-fonts/lora';
-import { ArrowDownToLine, ArrowRight, ArrowUpRight, BookOpen, CalendarDays, Camera, Check, ChevronLeft, ChevronRight, CircleHelp, Coffee, Fingerprint, Flower2, Heart, Leaf, LockKeyhole, Plus, ScanBarcode, Search, Settings2, ShieldCheck, Smile, Sparkles, Sprout, Sun, Trash2, TrendingUp, Upload, Utensils, X } from 'lucide-react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { ArrowDownToLine, ArrowRight, ArrowUpRight, Bell, BookOpen, CalendarDays, Camera, Check, ChevronLeft, ChevronRight, CircleHelp, Coffee, Fingerprint, Flower2, Heart, Leaf, LockKeyhole, Plus, ScanBarcode, Search, Settings2, ShieldCheck, Smile, Sparkles, Sprout, Sun, Trash2, TrendingUp, Upload, Utensils, X } from 'lucide-react-native';
 import { C, F, T, Heading, Row, Card, Button, IconButton, Pill, Chip, Field, Notice, Sheet, SectionTitle, Botanical, MiniChart } from './src/components/ui';
 import { MealForm, SymptomForm, uid } from './src/components/EntryForms';
 import { analyzePatterns, getDemoData, BUILT_IN_SYMPTOMS, localDateKey, foodCatalogSize, addDays, getIngredientInfo } from './src/domain';
-import type { AppData, DayCheckIn, Level, Meal, PatternResult, SymptomDefinition, SymptomLog } from './src/domain/types';
+import type { AppData, DayCheckIn, Level, Meal, NotificationPreferences, PatternResult, SymptomDefinition, SymptomLog } from './src/domain/types';
 import { LEARN_ARTICLES, SAFETY_NOTICES, type LearnArticle } from './src/content';
 import { emptyDiary, parseDiary, type SavedDiary } from './src/storage/schema';
 import { loadDiary, saveDiary } from './src/storage/persistence';
 import { exportFile, importFile } from './src/services/files';
+import { configureLocalNotifications, notifyNewPatterns, replaceDailyReminder, requestLocalNotificationPermission } from './src/services/notifications';
 
 type Tab = 'journal' | 'patterns' | 'learn' | 'you';
-type ModalState = { type: 'meal'; meal?: Meal; mode?: 'type' | 'scan' } | { type: 'symptom'; symptom?: SymptomLog } | { type: 'symptoms' } | { type: 'checkin' } | { type: 'article'; article: LearnArticle } | { type: 'pattern'; pattern: PatternResult } | { type: 'welcome' } | { type: 'privacy' } | { type: 'delete' } | { type: 'restore'; diary: SavedDiary } | null;
+type ModalState = { type: 'meal'; meal?: Meal; mode?: 'type' | 'scan' } | { type: 'symptom'; symptom?: SymptomLog } | { type: 'symptoms' } | { type: 'notifications' } | { type: 'checkin' } | { type: 'article'; article: LearnArticle } | { type: 'pattern'; pattern: PatternResult } | { type: 'welcome' } | { type: 'privacy' } | { type: 'delete' } | { type: 'restore'; diary: SavedDiary } | null;
 const tabs = [{ id: 'journal', label: 'My journal', icon: BookOpen }, { id: 'patterns', label: 'My patterns', icon: TrendingUp }, { id: 'learn', label: 'Discover', icon: Sprout }, { id: 'you', label: 'My space', icon: Settings2 }] as const;
 const dateLabel = (date: string, options: Intl.DateTimeFormatOptions) => new Date(date.length === 10 ? `${date}T12:00:00` : date).toLocaleDateString('en-GB', options);
 const timeLabel = (date: string) => new Date(date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 const percent = (value: number) => `${Math.round(value * 100)}%`;
 const moveDay = (date: string, n: number) => { const d = new Date(`${date}T12:00:00`); d.setDate(d.getDate() + n); return localDateKey(d); };
+const defaultNotifications = (): NotificationPreferences => ({ dailyReminderEnabled: false, dailyReminderHour: 20, dailyReminderMinute: 0, patternAlertsEnabled: false, notifiedPatternKeys: [] });
+const patternNotificationKey = (pattern: PatternResult) => `${pattern.ingredientId}|${pattern.symptomId}`;
 
 export default function App() {
   const [loaded, error] = useFonts({ DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold, Lora_400Regular, Lora_500Medium });
@@ -47,6 +51,8 @@ function Bellywise() {
   const [showEarlyComparisons, setShowEarlyComparisons] = useState(false);
   const [learnCategory, setLearnCategory] = useState('All');
   const scroll = useRef<ScrollView>(null);
+  const patternNotificationBusy = useRef(false);
+  useEffect(() => { configureLocalNotifications(); }, []);
   useEffect(() => { loadDiary().then(value => { savedRef.current = value; setSaved(value); if (!value.welcomed) setModal({ type: 'welcome' }); }).catch(e => setLoadError(e instanceof Error ? e.message : 'Your diary could not be opened.')); }, []);
   useEffect(() => { scroll.current?.scrollTo({ y: 0, animated: false }); setSearch(''); }, [tab]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 6000); return () => clearTimeout(timer); }, [notice]);
@@ -71,6 +77,18 @@ function Bellywise() {
     return operation;
   };
   const changeData = (fn: (d: AppData) => AppData) => commit(s => ({ ...s, data: fn(s.data) }));
+  useEffect(() => {
+    if (!saved || demo || patternNotificationBusy.current) return;
+    const preferences = saved.data.notificationPreferences ?? defaultNotifications();
+    if (!preferences.patternAlertsEnabled) return;
+    const unseen = analysis.patterns.filter(pattern => pattern.status === 'emerging' && !preferences.notifiedPatternKeys.includes(patternNotificationKey(pattern)));
+    if (unseen.length === 0) return;
+    patternNotificationBusy.current = true;
+    void notifyNewPatterns(unseen).then(() => commit(state => {
+      const current = state.data.notificationPreferences ?? defaultNotifications();
+      return { ...state, data: { ...state.data, notificationPreferences: { ...current, notifiedPatternKeys: [...new Set([...current.notifiedPatternKeys, ...unseen.map(patternNotificationKey)])] } } };
+    })).catch(() => setNotice('A new pattern was found, but its local notification could not be shown. Check notification access in Settings.')).finally(() => { patternNotificationBusy.current = false; });
+  }, [saved, demo, analysis.patterns]);
   const run = async (action: () => Promise<void>, message?: string) => { try { await action(); if (message) setNotice(message); } catch (e) { setNotice(e instanceof Error ? e.message : 'Something went wrong. Please try again.'); } };
   const startDemo = () => { const example = { ...emptyDiary(), welcomed: true, selectedSymptoms: BUILT_IN_SYMPTOMS.map(s => s.id), data: getDemoData() }; demoRef.current = example; setDemo(example); setModal(null); setSelectedDay(moveDay(today, -1)); setTab('journal'); };
   const exitDemo = () => { demoRef.current = null; setDemo(null); setSelectedDay(today); setWeekEnd(today); setNotice('Your personal diary is ready. The example entries were kept separate.'); };
@@ -133,6 +151,7 @@ function Bellywise() {
         {tab === 'you' && <>
           <T style={s.eyebrow}>MADE PERSONAL</T><Heading style={{ marginTop: 8 }}>Your journal. Your choices.</Heading><T muted style={{ marginTop: 10, marginBottom: 28 }}>Make Bellywise work for you, and keep control of your data.</T>
           <View style={{ gap: 18 }}><Card><Row style={{ marginBottom: 14 }}><Heart size={22} color={C.green} /><T style={{ fontFamily: F.semi, fontSize: 16 }}>What would you like to track?</T></Row><T muted style={{ marginBottom: 18 }}>Choose built-in symptoms and positive feelings, or add your own. You’re currently tracking {active.selectedSymptoms.length}.</T><Button label="Personalise my symptoms" variant="secondary" onPress={() => setModal({ type: 'symptoms' })} /></Card>
+            <Card><Row style={{ marginBottom: 14 }}><Bell size={22} color={C.green} /><T style={{ fontFamily: F.semi, fontSize: 16 }}>Gentle reminders</T></Row><T muted style={{ marginBottom: 18 }}>{demo ? 'Notification choices belong to your personal diary. Return to it before changing them.' : Platform.OS === 'web' ? 'Local notifications are available in the iPhone and iPad app.' : (data.notificationPreferences?.dailyReminderEnabled || data.notificationPreferences?.patternAlertsEnabled) ? `Notifications are on${data.notificationPreferences?.dailyReminderEnabled ? ` · daily at ${String(data.notificationPreferences.dailyReminderHour).padStart(2, '0')}:${String(data.notificationPreferences.dailyReminderMinute).padStart(2, '0')}` : ''}.` : 'Choose a daily journal time and whether Bellywise should tell you when a stronger new pattern appears.'}</T><Button label={demo ? 'Return to my diary' : 'Choose notifications'} variant="secondary" onPress={demo ? exitDemo : () => setModal({ type: 'notifications' })} /></Card>
             <Card><Row style={{ marginBottom: 14 }}><ShieldCheck size={22} color={C.green} /><T style={{ fontFamily: F.semi, fontSize: 16 }}>Private by design</T></Row><T muted style={{ marginBottom: 15 }}>{Platform.OS === 'web' ? 'This browser preview stores its diary in this browser, without database encryption. Use fictional data here. The iOS app uses encrypted on-device storage.' : 'Your diary is encrypted on this device. Bellywise has no diary server, advertising SDK or analytics. Keep an exported backup if you need to move phones.'}</T><Button label="Privacy & data details" variant="ghost" icon={ArrowUpRight} onPress={() => setModal({ type: 'privacy' })} /></Card>
             <Card><Row style={{ marginBottom: 14 }}><ArrowDownToLine size={22} color={C.green} /><T style={{ fontFamily: F.semi, fontSize: 16 }}>Take your story with you</T></Row><T muted style={{ marginBottom: 18 }}>Export a readable report for a healthcare professional, or save a backup to restore later. Exports contain your diary and are not encrypted.</T><Row style={{ flexWrap: 'wrap' }}><Button label="Export a report" icon={ArrowDownToLine} variant="secondary" onPress={() => run(() => exportFile(createReport(data, definitions, analysis.patterns, !!demo), 'Bellywise-diary-report.txt', 'text/plain'), 'Your report is ready to save or share.')} /><Button label="Save backup" icon={ArrowDownToLine} variant="ghost" onPress={() => run(() => exportFile(JSON.stringify(active, null, 2), 'Bellywise-backup.json'), 'Your backup is ready. Keep it somewhere private.')} /><Button label="Restore backup" icon={Upload} variant="ghost" onPress={() => run(async () => { const raw = await importFile(); if (raw) setModal({ type: 'restore', diary: parseDiary(raw) }); })} /></Row></Card>
             <Card><Row style={{ marginBottom: 13 }}><Sparkles size={22} color={C.green} /><T style={{ fontFamily: F.semi, fontSize: 16 }}>Try an example diary</T></Row><T muted style={{ marginBottom: 18 }}>Explore six weeks of fictional meals and feelings. The example stays separate from your personal journal.</T><Button label={demo ? 'Return to my diary' : 'Explore example diary'} variant="secondary" onPress={demo ? exitDemo : startDemo} /></Card>
@@ -146,7 +165,7 @@ function Bellywise() {
     <ModalHost modal={modal} active={active} definitions={definitions} demo={!!demo}
       selectedDay={selectedDay} selectedCheckIn={selectedCheckIn} commit={commit}
       changeData={changeData} run={run} setModal={setModal} setNotice={setNotice}
-      setSelectedDay={setSelectedDay} startDemo={startDemo} />
+      setSelectedDay={setSelectedDay} startDemo={startDemo} emergingPatterns={analysis.patterns.filter(pattern => pattern.status === 'emerging')} />
   </View>;
 }
 
@@ -164,10 +183,11 @@ interface ModalHostProps {
   setNotice: (notice: string) => void;
   setSelectedDay: (date: string) => void;
   startDemo: () => void;
+  emergingPatterns: PatternResult[];
 }
 
 /** Keep each modal's discriminated state and event handlers in a bounded render branch. */
-function ModalHost({ modal, active, definitions, demo, selectedDay, selectedCheckIn, commit, changeData, run, setModal, setNotice, setSelectedDay, startDemo }: ModalHostProps): React.JSX.Element | null {
+function ModalHost({ modal, active, definitions, demo, selectedDay, selectedCheckIn, commit, changeData, run, setModal, setNotice, setSelectedDay, startDemo, emergingPatterns }: ModalHostProps): React.JSX.Element | null {
   if (!modal) return null;
   switch (modal.type) {
     case 'welcome':
@@ -178,6 +198,8 @@ function ModalHost({ modal, active, definitions, demo, selectedDay, selectedChec
       return <SymptomForm initial={modal.symptom} selectedDay={selectedDay} definitions={definitions} selectedIds={active.selectedSymptoms} onManage={() => setModal({ type: 'symptoms' })} onClose={() => setModal(null)} onSave={entry => changeData(d => ({ ...d, symptoms: [...d.symptoms.filter(x => x.id !== entry.id), entry], checkIns: invalidateDays(d.checkIns, [entry.occurredAt, modal.symptom?.occurredAt]) })).then(() => { setSelectedDay(localDateKey(new Date(entry.occurredAt))); setNotice('Feeling saved to your journal.'); })} onDelete={modal.symptom ? () => changeData(d => ({ ...d, symptoms: d.symptoms.filter(x => x.id !== modal.symptom!.id), checkIns: invalidateDays(d.checkIns, [modal.symptom!.occurredAt]) })) : undefined} />;
     case 'symptoms':
       return <ManageSymptoms definitions={definitions} selected={active.selectedSymptoms} onClose={() => setModal(null)} onSave={(ids, custom) => commit(state => ({ ...state, selectedSymptoms: ids, data: { ...state.data, customSymptoms: custom } }))} />;
+    case 'notifications':
+      return <NotificationSettingsForm initial={active.data.notificationPreferences ?? defaultNotifications()} currentPatternKeys={emergingPatterns.map(patternNotificationKey)} onClose={() => setModal(null)} onSave={preferences => commit(state => ({ ...state, data: { ...state.data, notificationPreferences: preferences } })).then(() => setNotice('Notification choices saved.'))} />;
     case 'checkin':
       return <CheckInForm date={selectedDay} initial={selectedCheckIn} onClose={() => setModal(null)} onSave={checkin => commit(state => ({ ...state, data: { ...state.data, checkIns: [...state.data.checkIns.filter(c => c.date !== checkin.date), { ...checkin, trackedSymptomIds: [...new Set([...state.selectedSymptoms, ...state.data.symptoms.filter(entry => localDateKey(entry.occurredAt) === checkin.date).map(entry => entry.symptomId)])] }] } })).then(() => setNotice('Daily check-in saved.'))} />;
     case 'article':
@@ -185,11 +207,22 @@ function ModalHost({ modal, active, definitions, demo, selectedDay, selectedChec
     case 'pattern':
       return <PatternDetail pattern={modal.pattern} data={active.data} onClose={() => setModal(null)} />;
     case 'privacy':
-      return <Sheet title="Your data belongs to you" onClose={() => setModal(null)}><Notice>{Platform.OS === 'web' ? 'Browser preview data is saved to this browser’s local storage, which is not encrypted by Bellywise.' : 'The native app stores your diary in a SQLCipher-encrypted database. Its random key is kept in the device’s secure key store.'}</Notice><T>There is no sign-in, diary server, advertising or analytics in Bellywise. Camera text recognition uses Apple Vision on your device. The temporary image is removed after processing.</T><T>When you choose to search the product catalogue, Open Food Facts receives your search term or barcode and normal connection information, such as your IP address. Your symptoms and diary are not included.</T><T>Opening an educational source uses your browser. Your browser and that website have their own privacy practices.</T><T>Reports and backup files contain private health information in plain text. Choose carefully where you save or share them. Deleting the diary cannot delete copies you exported or copies held by operating-system backups.</T><T>Keep a private export before changing devices. Bellywise has no cloud recovery service.</T><Button label="Open Food Facts privacy information" variant="ghost" icon={ArrowUpRight} onPress={() => Linking.openURL('https://world.openfoodfacts.org/privacy')} /></Sheet>;
+      return <Sheet title="Your data belongs to you" onClose={() => setModal(null)}><Notice>{Platform.OS === 'web' ? 'Browser preview data is saved to this browser’s local storage, which is not encrypted by Bellywise.' : 'The native app stores your diary in a SQLCipher-encrypted database. Its random key is kept in the device’s secure key store.'}</Notice><T>There is no sign-in, diary server, advertising or analytics in Bellywise. Camera text recognition uses Apple Vision on your device. The temporary image is removed after processing.</T><T>Daily reminders and new-pattern alerts are scheduled locally. Bellywise never obtains a remote push token and sends no diary details to a notification server. Notification text can appear on your lock screen according to your iOS settings.</T><T>When you choose to search the product catalogue, Open Food Facts receives your search term or barcode and normal connection information, such as your IP address. Your symptoms and diary are not included.</T><T>Opening an educational source uses your browser. Your browser and that website have their own privacy practices.</T><T>Reports and backup files contain private health information in plain text. Choose carefully where you save or share them. Deleting the diary cannot delete copies you exported or copies held by operating-system backups.</T><T>Keep a private export before changing devices. Bellywise has no cloud recovery service.</T><Button label="Open Food Facts privacy information" variant="ghost" icon={ArrowUpRight} onPress={() => Linking.openURL('https://world.openfoodfacts.org/privacy')} /></Sheet>;
     case 'delete':
-      return <Sheet title="Delete this diary?" onClose={() => setModal(null)}><T>This removes all meals, feelings, check-ins and custom symptoms from {demo ? 'the example diary' : 'your Bellywise journal on this device'}. This cannot be undone here. Export a backup first if you need one.</T><Button label="Keep my diary" variant="secondary" onPress={() => setModal(null)} /><Button label="Delete all diary entries" variant="danger" icon={Trash2} onPress={() => run(async () => { await commit(() => ({ ...emptyDiary(), welcomed: true })); setModal(null); setNotice('Diary entries deleted from this app. Exported copies are unchanged.'); })} /></Sheet>;
+      return <Sheet title="Delete this diary?" onClose={() => setModal(null)}><T>This removes all meals, feelings, check-ins and custom symptoms from {demo ? 'the example diary' : 'your Bellywise journal on this device'}. This cannot be undone here. Export a backup first if you need one.</T><Button label="Keep my diary" variant="secondary" onPress={() => setModal(null)} /><Button label="Delete all diary entries" variant="danger" icon={Trash2} onPress={() => run(async () => { if (!demo) { const preferences = active.data.notificationPreferences ?? defaultNotifications(); await replaceDailyReminder(preferences.dailyReminderId, preferences.dailyReminderHour, preferences.dailyReminderMinute, false); } await commit(() => ({ ...emptyDiary(), welcomed: true })); setModal(null); setNotice('Diary entries deleted from this app. Exported copies are unchanged.'); })} /></Sheet>;
     case 'restore':
-      return <Sheet title="Restore this backup?" onClose={() => setModal(null)}><T>This backup contains {modal.diary.data.meals.length} food entries, {modal.diary.data.symptoms.length} feelings and {modal.diary.data.checkIns.length} check-ins. Restoring replaces {demo ? 'the example diary' : 'your current diary'}. Save a backup of your current entries first if needed.</T><Button label="Restore and replace current diary" icon={Upload} onPress={() => run(async () => { const restored = modal.diary; await commit(() => ({ ...restored, welcomed: true })); setModal(null); setNotice('Your backup was restored.'); })} /><Button label="Cancel" variant="ghost" onPress={() => setModal(null)} /></Sheet>;
+      return <Sheet title="Restore this backup?" onClose={() => setModal(null)}><T>This backup contains {modal.diary.data.meals.length} food entries, {modal.diary.data.symptoms.length} feelings and {modal.diary.data.checkIns.length} check-ins. Restoring replaces {demo ? 'the example diary' : 'your current diary'}. Save a backup of your current entries first if needed.</T><Button label="Restore and replace current diary" icon={Upload} onPress={() => run(async () => {
+        const restored = modal.diary;
+        if (!demo && Platform.OS !== 'web') {
+          const current = active.data.notificationPreferences ?? defaultNotifications();
+          const desired = restored.data.notificationPreferences ?? defaultNotifications();
+          await replaceDailyReminder(current.dailyReminderId, current.dailyReminderHour, current.dailyReminderMinute, false);
+          const allowed = !(desired.dailyReminderEnabled || desired.patternAlertsEnabled) || await requestLocalNotificationPermission();
+          const reminderId = allowed ? await replaceDailyReminder(undefined, desired.dailyReminderHour, desired.dailyReminderMinute, desired.dailyReminderEnabled) : undefined;
+          restored.data.notificationPreferences = { ...desired, dailyReminderEnabled: allowed && desired.dailyReminderEnabled, patternAlertsEnabled: allowed && desired.patternAlertsEnabled, ...(reminderId ? { dailyReminderId: reminderId } : { dailyReminderId: undefined }) };
+        }
+        await commit(() => ({ ...restored, welcomed: true })); setModal(null); setNotice('Your backup was restored.');
+      })} /><Button label="Cancel" variant="ghost" onPress={() => setModal(null)} /></Sheet>;
   }
 }
 
@@ -201,6 +234,45 @@ function invalidateDays(checkIns: DayCheckIn[], dates: (string | undefined)[]) {
 function ManageSymptoms({ definitions, selected, onClose, onSave }: { definitions: SymptomDefinition[]; selected: string[]; onClose: () => void; onSave: (ids: string[], custom: SymptomDefinition[]) => Promise<void> }) {
   const [ids, setIds] = useState(selected); const [custom, setCustom] = useState(definitions.filter(d => !BUILT_IN_SYMPTOMS.some(b => b.id === d.id))); const [name, setName] = useState(''); const [kind, setKind] = useState<'negative' | 'positive'>('negative'); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
   return <Sheet title="Make it your journal" subtitle="Choose the feelings you’d like to track." onClose={onClose}>{(['negative', 'positive'] as const).map(k => <View key={k} style={{ gap: 11 }}><T style={{ fontFamily: F.semi }}>{k === 'negative' ? 'Symptoms' : 'Positive feelings'}</T><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{[...BUILT_IN_SYMPTOMS, ...custom].filter(d => d.kind === k).map(d => <Chip key={d.id} label={d.name} selected={ids.includes(d.id)} onPress={() => setIds(v => v.includes(d.id) ? v.filter(i => i !== d.id) : [...v, d.id])} />)}</View></View>)}<T style={{ fontFamily: F.semi }}>Add your own</T><Field label="Feeling name" value={name} onChangeText={setName} placeholder="e.g. Restless sleep" maxLength={80} /><Row><Chip label="Symptom" selected={kind === 'negative'} onPress={() => setKind('negative')} /><Chip label="Positive" selected={kind === 'positive'} onPress={() => setKind('positive')} /></Row><Button label="Add custom feeling" variant="secondary" icon={Plus} onPress={() => { if (!name.trim()) return; if ([...BUILT_IN_SYMPTOMS, ...custom].some(d => d.name.toLowerCase() === name.trim().toLowerCase())) { setError('That feeling already exists. Select it above.'); return; } const d = { id: `custom-${uid()}`, name: name.trim(), kind }; setCustom(v => [...v, d]); setIds(v => [...v, d.id]); setName(''); setError(''); }} /><T muted style={{ fontSize: 11 }}>Unselecting a feeling hides it from quick logging. Your past entries stay in your journal and analysis.</T>{!!error && <Notice warm>{error}</Notice>}<Button label="Save my choices" icon={Check} busy={busy} onPress={async () => { setBusy(true); try { await onSave(ids, custom); onClose(); } catch { setError('Your choices could not be saved.'); } finally { setBusy(false); } }} /></Sheet>;
+}
+
+function NotificationSettingsForm({ initial, currentPatternKeys, onClose, onSave }: { initial: NotificationPreferences; currentPatternKeys: string[]; onClose: () => void; onSave: (preferences: NotificationPreferences) => Promise<void> }) {
+  const [daily, setDaily] = useState(initial.dailyReminderEnabled);
+  const [patternAlerts, setPatternAlerts] = useState(initial.patternAlertsEnabled);
+  const [time, setTime] = useState(() => { const value = new Date(); value.setHours(initial.dailyReminderHour, initial.dailyReminderMinute, 0, 0); return value; });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const save = async () => {
+    if (Platform.OS === 'web') { setError('Open Bellywise on an iPhone or iPad to choose local notifications.'); return; }
+    setBusy(true); setError('');
+    try {
+      if ((daily || patternAlerts) && !await requestLocalNotificationPermission()) {
+        setError('Notifications are off for Bellywise. Allow them in iOS Settings, then try again.');
+        return;
+      }
+      const reminderId = await replaceDailyReminder(initial.dailyReminderId, time.getHours(), time.getMinutes(), daily);
+      const firstEnable = patternAlerts && !initial.patternAlertsEnabled;
+      await onSave({
+        dailyReminderEnabled: daily,
+        dailyReminderHour: time.getHours(),
+        dailyReminderMinute: time.getMinutes(),
+        ...(reminderId ? { dailyReminderId: reminderId } : {}),
+        patternAlertsEnabled: patternAlerts,
+        notifiedPatternKeys: firstEnable ? [...new Set([...initial.notifiedPatternKeys, ...currentPatternKeys])] : initial.notifiedPatternKeys,
+      });
+      onClose();
+    } catch { setError('Your notification choices could not be saved. Please try again.'); }
+    finally { setBusy(false); }
+  };
+  return <Sheet title="Notifications" subtitle="A gentle nudge, entirely from this device." onClose={onClose}>
+    {Platform.OS === 'web' && <Notice warm>Notification scheduling is available in the native iPhone and iPad app.</Notice>}
+    <Card><Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}><View style={{ flex: 1, paddingRight: 14 }}><T style={{ fontFamily: F.semi }}>Daily journal reminder</T><T muted style={{ fontSize: 11, marginTop: 6 }}>A repeating local reminder to log food, drinks and feelings.</T></View><Switch accessibilityLabel="Daily journal reminder" value={daily} onValueChange={setDaily} trackColor={{ true: C.green }} disabled={Platform.OS === 'web'} /></Row>{daily && <View style={{ marginTop: 18, alignItems: 'flex-start', gap: 8 }}><T style={{ fontSize: 12 }}>Remind me at</T><DateTimePicker value={time} mode="time" display="default" themeVariant="light" onChange={(_, value) => value && setTime(value)} /></View>}</Card>
+    <Card><Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}><View style={{ flex: 1, paddingRight: 14 }}><T style={{ fontFamily: F.semi }}>New pattern alerts</T><T muted style={{ fontSize: 11, marginTop: 6 }}>Notify me when an on-device diary comparison first passes Bellywise’s stronger evidence checks.</T></View><Switch accessibilityLabel="New pattern alerts" value={patternAlerts} onValueChange={setPatternAlerts} trackColor={{ true: C.green }} disabled={Platform.OS === 'web'} /></Row></Card>
+    <Notice>No remote notification service is used. Bellywise does not upload your diary or register for a push token. Pattern checks happen when the app processes your diary on this device.</Notice>
+    <T muted style={{ fontSize: 11 }}>Pattern alerts are observational prompts, not diagnoses or advice to remove a food. iOS may delay notifications according to Focus and notification settings.</T>
+    {!!error && <Notice warm>{error}</Notice>}
+    <Button label="Save notification choices" icon={Bell} onPress={() => void save()} busy={busy} disabled={Platform.OS === 'web'} />
+  </Sheet>;
 }
 
 function CheckInForm({ date, initial, onClose, onSave }: { date: string; initial?: DayCheckIn; onClose: () => void; onSave: (v: DayCheckIn) => Promise<void> }) {
