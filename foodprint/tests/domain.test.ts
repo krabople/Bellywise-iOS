@@ -178,6 +178,16 @@ test('a missing/incomplete day never becomes a negative control; newest check-in
   assert.equal(analyzePatterns(data, { now }).completeDays, 20);
 });
 
+test('explicit food and symptom logs contribute before the daily check-in without inventing absence', () => {
+  const data = synthetic();
+  data.checkIns = data.checkIns.filter((_, index) => index !== 0 && index !== 1);
+  const milk = analyzePatterns(data, { now, window: 'same-day' }).patterns.find(item => item.ingredientId === 'milk');
+  assert(milk);
+  assert.equal(milk.exposedDays, 21, 'the unfinished milk-and-symptom day remains positive evidence');
+  assert.equal(milk.unexposedDays, 20, 'the unfinished symptom-free rice day cannot become a negative control');
+  assert(milk.cautions.some(item => item.includes('unfinished day')));
+});
+
 test('newly tracked feelings do not turn historical untracked dates into negative controls', () => {
   const data = synthetic();
   for (let index = 0; index < data.checkIns.length; index++) if (index % 2 === 1) data.checkIns[index].trackedSymptomIds = ['energy'];

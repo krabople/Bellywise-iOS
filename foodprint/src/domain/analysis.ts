@@ -8,14 +8,14 @@ export const MINIMUM_COMPLETE_DAYS = 14;
 export const MINIMUM_COMPARISON_DAYS = 6;
 interface Day {
   date: string;
-  checkIn: DayCheckIn;
+  checkIn?: DayCheckIn;
   ingredients: Map<string, { name: string; confirmed: boolean }>;
   symptoms: Set<string>;
   firstExposure: Map<string, number>;
   firstSymptom: Map<string, number>;
   unresolvedMeal: boolean;
 }
-interface Observation { date: string; exposed: boolean; confirmed: boolean; outcome: boolean; stress: number }
+interface Observation { date: string; exposed: boolean; confirmed: boolean; outcome: boolean; stress?: number; complete: boolean }
 
 const pct = (value: number) => `${Math.round(value * 100)}%`;
 const difference = (rows: Observation[]) => {
@@ -31,11 +31,19 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
   const days = new Map<string, Day>();
   // Last check-in wins, including an explicit reversal to incomplete.
   const checkIns = new Map(data.checkIns.map(checkIn => [checkIn.date, checkIn]));
+  const ensureDay = (date: string) => {
+    if (!isDateKey(date) || date >= today) return undefined;
+    const existing = days.get(date);
+    if (existing) return existing;
+    const day: Day = { date, checkIn: checkIns.get(date), ingredients: new Map(), symptoms: new Set(), firstExposure: new Map(), firstSymptom: new Map(), unresolvedMeal: false };
+    days.set(date, day);
+    return day;
+  };
   for (const checkIn of checkIns.values()) {
-    if (checkIn.complete && isDateKey(checkIn.date) && checkIn.date < today) days.set(checkIn.date, { date: checkIn.date, checkIn, ingredients: new Map(), symptoms: new Set(), firstExposure: new Map(), firstSymptom: new Map(), unresolvedMeal: false });
+    if (checkIn.complete) ensureDay(checkIn.date);
   }
   for (const meal of data.meals) {
-    const day = days.get(localDateKey(meal.eatenAt));
+    const day = ensureDay(localDateKey(meal.eatenAt));
     if (!day) continue;
     if (!meal.ingredients.length || meal.ingredients.some(item => item.confidence === 'inferred' && item.id.startsWith('custom-'))) day.unresolvedMeal = true;
     for (const ingredient of meal.ingredients) {
@@ -46,7 +54,7 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
     }
   }
   for (const symptom of data.symptoms) {
-    const day = days.get(localDateKey(symptom.occurredAt));
+    const day = ensureDay(localDateKey(symptom.occurredAt));
     if (!day) continue;
     day.symptoms.add(symptom.symptomId);
     day.firstSymptom.set(symptom.symptomId, Math.min(day.firstSymptom.get(symptom.symptomId) ?? Infinity, Date.parse(symptom.occurredAt)));
@@ -60,18 +68,24 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
   for (const day of ordered) for (const [id, value] of day.ingredients) names.set(id, value.name);
   const rows: PatternResult[] = [];
   const windows: ExposureWindow[] = options.window ? [options.window] : ['same-day', 'next-day'];
-  const details = new Map<string, { enough: boolean; repeated: boolean; confounded: boolean; orderingSupported: boolean; confirmedDifference?: number }>();
+  const details = new Map<string, { enough: boolean; repeated: boolean; confounded: boolean; orderingSupported: boolean; confirmedDifference?: number; completeRiskDifference: number; completeIntervalLower: number; confirmedCompleteExposedDays: number }>();
 
   for (const ingredientId of ingredientIds) for (const symptomId of symptomIds) for (const window of windows) {
     const observations: Observation[] = ordered.flatMap(day => {
       const outcomeDay = window === 'same-day' ? day : days.get(addDays(day.date, 1));
       if (!outcomeDay || day.unresolvedMeal || outcomeDay.unresolvedMeal) return [];
-      // A new/custom symptom must not manufacture historical symptom-free controls.
-      if (!outcomeDay.checkIn.trackedSymptomIds?.includes(symptomId)) return [];
       const exposure = day.ingredients.get(ingredientId);
+      const outcome = outcomeDay.symptoms.has(symptomId);
+      const exposureDayComplete = Boolean(day.checkIn?.complete);
+      const outcomeDayComplete = Boolean(outcomeDay.checkIn?.complete && outcomeDay.checkIn.trackedSymptomIds?.includes(symptomId));
+      // An explicitly logged symptom is usable even before the daily check-in.
+      // Absence is usable only when the user confirmed that this feeling was tracked.
+      if (!outcome && !outcomeDayComplete) return [];
+      // Presence of an ingredient can be used from an unfinished day; absence cannot.
+      if (!exposure && !exposureDayComplete) return [];
       // An uncertain exposure cannot become an unexposed control in confirmed-only mode.
       if (options.includeInferred === false && exposure && !exposure.confirmed) return [];
-      return [{ date: day.date, exposed: Boolean(exposure), confirmed: Boolean(exposure?.confirmed), outcome: outcomeDay.symptoms.has(symptomId), stress: outcomeDay.checkIn.stress }];
+      return [{ date: day.date, exposed: Boolean(exposure), confirmed: Boolean(exposure?.confirmed), outcome, stress: outcomeDay.checkIn?.stress, complete: exposureDayComplete && outcomeDayComplete }];
     });
     const exposed = observations.filter(row => row.exposed), unexposed = observations.filter(row => !row.exposed);
     // Still include sparse hypotheses in correction; do not select tests by their outcomes.
@@ -80,11 +94,18 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
     const confirmedExposedDays = exposed.filter(row => row.confirmed).length;
     const exposedRate = a / exposed.length, unexposedRate = c / unexposed.length, riskDifference = exposedRate - unexposedRate;
     const interval = differenceInterval(a, exposed.length, c, unexposed.length);
-    const lowStress = observations.filter(row => row.stress <= 3);
+    const lowStress = observations.filter(row => row.stress !== undefined && row.stress <= 3);
     const lowStressRiskDifference = lowStress.filter(row => row.exposed).length >= 3 && lowStress.filter(row => !row.exposed).length >= 3 ? difference(lowStress) : undefined;
-    const stressDifference = exposed.filter(row => row.stress >= 4).length / exposed.length - unexposed.filter(row => row.stress >= 4).length / unexposed.length;
+    const stressKnownExposed = exposed.filter(row => row.stress !== undefined), stressKnownUnexposed = unexposed.filter(row => row.stress !== undefined);
+    const stressDifference = stressKnownExposed.length && stressKnownUnexposed.length ? stressKnownExposed.filter(row => row.stress! >= 4).length / stressKnownExposed.length - stressKnownUnexposed.filter(row => row.stress! >= 4).length / stressKnownUnexposed.length : 0;
     const confounded = Math.abs(stressDifference) >= 0.3 || (lowStressRiskDifference !== undefined && riskDifference - lowStressRiskDifference >= 0.2);
-    const confirmedDifference = difference(observations.filter(row => !row.exposed || row.confirmed));
+    const completeObservations = observations.filter(row => row.complete);
+    const completeExposed = completeObservations.filter(row => row.exposed), completeUnexposed = completeObservations.filter(row => !row.exposed);
+    const completeA = completeExposed.filter(row => row.outcome).length, completeC = completeUnexposed.filter(row => row.outcome).length;
+    const completeRiskDifference = completeExposed.length && completeUnexposed.length ? completeA / completeExposed.length - completeC / completeUnexposed.length : 0;
+    const completeInterval = completeExposed.length && completeUnexposed.length ? differenceInterval(completeA, completeExposed.length, completeC, completeUnexposed.length) : [-1, 1] as [number, number];
+    const confirmedCompleteExposedDays = completeExposed.filter(row => row.confirmed).length;
+    const confirmedDifference = difference(completeObservations.filter(row => !row.exposed || row.confirmed));
     const reversedDays = window === 'same-day' ? exposed.filter(row => row.outcome && (days.get(row.date)?.firstSymptom.get(symptomId) ?? Infinity) < (days.get(row.date)?.firstExposure.get(ingredientId) ?? Infinity)).length : 0;
     const orderingSupported = reversedDays === 0;
     const coOccursWith = ingredientIds.filter(otherId => {
@@ -95,16 +116,18 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
     }).map(id => names.get(id) ?? id);
     let exposureRuns = 0;
     let previousExposed = false;
-    for (const row of observations) {
+    for (const row of completeObservations) {
       if (row.exposed && !previousExposed) exposureRuns++;
       previousExposed = row.exposed;
     }
     const repeated = exposureRuns >= 3;
-    const enough = observations.length >= MINIMUM_COMPLETE_DAYS && exposed.length >= MINIMUM_COMPARISON_DAYS && unexposed.length >= MINIMUM_COMPARISON_DAYS;
+    const enough = completeObservations.length >= MINIMUM_COMPLETE_DAYS && completeExposed.length >= MINIMUM_COMPARISON_DAYS && completeUnexposed.length >= MINIMUM_COMPARISON_DAYS;
     const symptom = definitions.get(symptomId)!;
     const ingredientName = names.get(ingredientId) ?? ingredientId;
     const id = `${ingredientId}:${symptomId}:${window}`;
     const cautions = ['An association cannot establish an intolerance or cause. Other foods, timing, illness, medication and menstrual changes can affect symptoms.'];
+    const unfinishedRows = observations.filter(row => !row.complete).length;
+    if (unfinishedRows) cautions.push(`${unfinishedRows} comparison day${unfinishedRows === 1 ? '' : 's'} use explicitly logged food or symptoms from an unfinished day. Bellywise uses what was present but never assumes an unlogged ingredient or symptom was absent.`);
     if (ordered.some(day => day.unresolvedMeal)) cautions.push('Days containing unresolved meal names or meals with no ingredients are excluded. Review those entries so hidden ingredients are not treated as absent.');
     if (!enough) cautions.push(`Keep logging: this comparison needs at least ${MINIMUM_COMPLETE_DAYS} complete days, including ${MINIMUM_COMPARISON_DAYS} with and ${MINIMUM_COMPARISON_DAYS} without this ingredient.`);
     if (confirmedExposedDays < exposed.length) cautions.push(`${exposed.length - confirmedExposedDays} exposure days use only inferred recipe ingredients. Confirm the actual label or recipe to improve this comparison.`);
@@ -120,19 +143,19 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
       window, windowLabel: window === 'same-day' ? 'Same calendar day' : 'Following calendar day',
       exposedDays: exposed.length, unexposedDays: unexposed.length, exposedSymptomDays: a, unexposedSymptomDays: c,
       exposedRate, unexposedRate, riskDifference, interval,
-      pValue: fisherExact(a, exposed.length - a, c, unexposed.length - c), adjustedPValue: 1,
+      pValue: completeExposed.length && completeUnexposed.length ? fisherExact(completeA, completeExposed.length - completeA, completeC, completeUnexposed.length - completeC) : 1, adjustedPValue: 1,
       status: enough ? 'exploratory' : 'not-enough-data',
       headline: `${ingredientName} & ${symptom.name.toLowerCase()}`,
       summary: `${symptom.name} was logged on ${pct(exposedRate)} of days with ${ingredientName.toLowerCase()} and ${pct(unexposedRate)} of days without it${window === 'next-day' ? ', looking at the following day' : ''}.`,
       cautions, coOccursWith, inferredFraction: 1 - confirmedExposedDays / exposed.length, confirmedExposedDays, lowStressRiskDifference,
     });
-    details.set(id, { enough, repeated, confounded, orderingSupported, confirmedDifference });
+    details.set(id, { enough, repeated, confounded, orderingSupported, confirmedDifference, completeRiskDifference, completeIntervalLower: completeInterval[0], confirmedCompleteExposedDays });
   }
   const adjusted = benjaminiHochberg(rows.map(row => row.pValue));
   rows.forEach((row, index) => {
     row.adjustedPValue = adjusted[index];
     const detail = details.get(row.id)!;
-    if (detail.enough && detail.repeated && detail.orderingSupported && !detail.confounded && row.confirmedExposedDays >= MINIMUM_COMPARISON_DAYS && row.riskDifference >= 0.2 && row.interval[0] > 0 && row.adjustedPValue <= 0.05 && (detail.confirmedDifference ?? 0) >= 0.2) row.status = 'emerging';
+    if (detail.enough && detail.repeated && detail.orderingSupported && !detail.confounded && detail.confirmedCompleteExposedDays >= MINIMUM_COMPARISON_DAYS && detail.completeRiskDifference >= 0.2 && detail.completeIntervalLower > 0 && row.adjustedPValue <= 0.05 && (detail.confirmedDifference ?? 0) >= 0.2) row.status = 'emerging';
   });
   // Correction happens before window selection or display filtering.
   const best = new Map<string, PatternResult>();
@@ -143,12 +166,12 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
   }
   // Decreased negative symptoms are not promoted as evidence that a food is protective.
   const patterns = [...best.values()].filter(row => row.riskDifference > 0 && row.exposedSymptomDays >= 2).sort((a, b) => rank(b) - rank(a));
-  const completeDays = ordered.length;
-  const legacyDays = ordered.filter(day => !day.checkIn.trackedSymptomIds).length;
+  const completeDays = ordered.filter(day => day.checkIn?.complete).length;
+  const legacyDays = ordered.filter(day => day.checkIn?.complete && !day.checkIn.trackedSymptomIds).length;
   return {
     patterns, completeDays, minimumDays: MINIMUM_COMPLETE_DAYS,
     message: legacyDays > 0 ? `${legacyDays} complete day${legacyDays === 1 ? '' : 's'} need${legacyDays === 1 ? 's' : ''} review of which feelings were tracked. Re-save those daily check-ins to use them in patterns. A feeling that was not tracked never counts as absent.` : completeDays < MINIMUM_COMPLETE_DAYS
-      ? `${completeDays} of ${MINIMUM_COMPLETE_DAYS} complete past days logged. Early patterns are only clues; a missing entry never counts as a symptom-free day.`
-      : 'Patterns compare complete past days with and without an ingredient. Keep confirming ingredients and consider these observations with a qualified clinician.',
+      ? `${completeDays} of ${MINIMUM_COMPLETE_DAYS} complete past days logged. Logged food-and-symptom events from unfinished days can still contribute, but only a completed check-in can confirm that a symptom was absent.`
+      : 'Patterns use logged food-and-symptom events and completed check-ins. Only completed days can provide symptom-free comparisons; consider every observation with a qualified clinician.',
   };
 }

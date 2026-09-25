@@ -55,7 +55,7 @@ export interface SymptomLog {
 export interface DayCheckIn {
   /** Calendar date in the device's local time, YYYY-MM-DD. */
   date: string;
-  /** User explicitly confirms that all meals AND symptoms have been logged. */
+  /** User confirms the day is complete, allowing tracked-but-unlogged feelings to count as absent. */
   complete: boolean;
   /** Snapshot of feelings actively checked for, including any feeling logged that day. */
   trackedSymptomIds?: string[];
