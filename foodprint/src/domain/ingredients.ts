@@ -18,6 +18,9 @@ export interface IngredientInfo {
   aliases: string[];
   whatItIs: string;
   whereFound: string;
+  triggerLevel: 'recognised' | 'possible' | 'not-common' | 'unknown';
+  triggerSummary: string;
+  commonSymptoms: string[];
   symptomContext: string;
   sourceTitle?: string;
   sourceUrl?: string;
@@ -227,23 +230,104 @@ export function ingredientsFromNames(names: string[], confidence: Confidence = '
   })).values()];
 }
 
-const PROFILE: Record<string, Pick<IngredientInfo, 'whatItIs' | 'whereFound' | 'symptomContext' | 'sourceTitle' | 'sourceUrl'>> = {
-  lactose: { whatItIs: 'Lactose is the natural sugar in milk and dairy foods.', whereFound: 'Milk, yoghurt, soft cheese, cream and foods made with milk.', symptomContext: 'When the small intestine makes too little lactase, lactose can reach the colon and cause wind, bloating, diarrhoea or abdominal discomfort. Amount and tolerance vary.', sourceTitle: 'NHS: Lactose intolerance', sourceUrl: 'https://www.nhs.uk/conditions/lactose-intolerance/' },
-  wheat: { whatItIs: 'Wheat is a cereal grain. It contains gluten as well as other proteins and fermentable carbohydrates.', whereFound: 'Bread, pasta, pastry, many cereals, sauces and processed foods.', symptomContext: 'Several different conditions can be associated with wheat, including coeliac disease, wheat allergy and non-coeliac symptoms. A diary cannot distinguish them, and testing for coeliac disease should happen before removing gluten.', sourceTitle: 'NHS: Coeliac disease', sourceUrl: 'https://www.nhs.uk/conditions/coeliac-disease/' },
-  caffeine: { whatItIs: 'Caffeine is a stimulant naturally present in coffee, tea and cocoa and added to some drinks and medicines.', whereFound: 'Coffee, tea, cola, energy drinks, chocolate and some medicines.', symptomContext: 'Sensitivity varies. Larger amounts can contribute to restlessness, sleep difficulty, palpitations, anxiety or digestive upset.', sourceTitle: 'Food Standards Agency: Caffeine', sourceUrl: 'https://www.food.gov.uk/safety-hygiene/food-supplements' },
-  sorbitol: { whatItIs: 'Sorbitol is a sugar alcohol used as a sweetener and found naturally in some fruit.', whereFound: 'Sugar-free sweets and gum, some medicines, apples, pears and stone fruit.', symptomContext: 'Sugar alcohols are incompletely absorbed in some people and can contribute to wind, bloating or diarrhoea, especially in larger amounts.', sourceTitle: 'NHS: Food intolerance', sourceUrl: 'https://www.nhs.uk/conditions/food-intolerance/' },
-  niacin: { whatItIs: 'Niacin is vitamin B3, a water-soluble vitamin used in energy metabolism. “Niacin”, “vitamin B3” and “B3” are stored as one ingredient.', whereFound: 'Meat, fish, nuts, grains and foods fortified with vitamins.', symptomContext: 'Niacin in ordinary food is not a common intolerance trigger. High-dose nicotinic-acid supplements can cause flushing and other adverse effects; supplement doses are different from normal food exposure.', sourceTitle: 'NIH: Niacin fact sheet', sourceUrl: 'https://ods.od.nih.gov/factsheets/Niacin-Consumer/' },
+type IngredientProfile = Pick<IngredientInfo, 'triggerLevel' | 'triggerSummary' | 'commonSymptoms' | 'symptomContext' | 'sourceTitle' | 'sourceUrl'>
+  & Partial<Pick<IngredientInfo, 'whatItIs' | 'whereFound'>>;
+
+const IBS_SOURCE = { sourceTitle: 'NIDDK: Eating, diet and nutrition for IBS', sourceUrl: 'https://www.niddk.nih.gov/health-information/digestive-diseases/irritable-bowel-syndrome/eating-diet-nutrition' };
+const ALLERGY_SOURCE = { sourceTitle: 'NHS: Food allergy symptoms', sourceUrl: 'https://www.nhs.uk/conditions/food-allergy/' };
+const FODMAP_SYMPTOMS = ['Bloating', 'Wind', 'Abdominal pain or cramps', 'Diarrhoea or constipation'];
+
+const PROFILE: Record<string, IngredientProfile> = {
+  lactose: { whatItIs: 'Lactose is the natural sugar in milk and dairy foods.', whereFound: 'Milk, yoghurt, soft cheese, cream and foods made with milk.', triggerLevel: 'recognised', triggerSummary: 'A well-established digestive trigger in people who make too little lactase.', commonSymptoms: ['Bloating', 'Wind', 'Abdominal pain or rumbling', 'Diarrhoea or constipation', 'Nausea'], symptomContext: 'Undigested lactose can reach the colon, draw in fluid and ferment. Symptoms depend on the amount eaten and the person’s remaining lactase activity; many people tolerate some lactose.', sourceTitle: 'NHS: Lactose intolerance', sourceUrl: 'https://www.nhs.uk/conditions/lactose-intolerance/' },
+  milk: { whatItIs: 'Milk contains lactose sugar and milk proteins. These can be involved in different kinds of reaction.', whereFound: 'Milk, yoghurt, cream, soft cheese, butter and many processed foods.', triggerLevel: 'recognised', triggerSummary: 'A well-known symptom trigger for some people, with lactose intolerance and milk allergy being different conditions.', commonSymptoms: ['Bloating, wind or abdominal pain', 'Diarrhoea or nausea', 'Itching, hives or swelling in allergy', 'Cough or wheeze in allergy'], symptomContext: 'Lactose intolerance mainly causes digestive symptoms and often depends on dose. Milk-protein allergy can affect the skin or breathing and may be serious. A diary cannot tell these mechanisms apart.', sourceTitle: 'NHS: Lactose intolerance and milk allergy', sourceUrl: 'https://www.nhs.uk/conditions/lactose-intolerance/' },
+  wheat: { whatItIs: 'Wheat is a cereal grain. It contains gluten as well as other proteins and fermentable carbohydrates.', whereFound: 'Bread, pasta, pastry, many cereals, sauces and processed foods.', triggerLevel: 'recognised', triggerSummary: 'A well-known trigger, but several different mechanisms can be responsible.', commonSymptoms: FODMAP_SYMPTOMS, symptomContext: 'Wheat fructans can aggravate gut symptoms in some people with IBS. Coeliac disease and wheat allergy are different conditions and may cause other symptoms. A diary cannot distinguish them, and coeliac testing should happen before removing gluten.', sourceTitle: 'NHS: Coeliac disease', sourceUrl: 'https://www.nhs.uk/conditions/coeliac-disease/' },
+  caffeine: { whatItIs: 'Caffeine is a stimulant naturally present in coffee, tea and cocoa and added to some drinks and medicines.', whereFound: 'Coffee, tea, cola, energy drinks, chocolate and some medicines.', triggerLevel: 'recognised', triggerSummary: 'A recognised dose-related trigger for some people.', commonSymptoms: ['Restlessness or jitteriness', 'Sleep difficulty', 'Palpitations', 'Anxiety', 'Digestive upset'], symptomContext: 'Sensitivity varies considerably. The amount, timing, medicines and other ingredients in a caffeinated product can all affect symptoms.', sourceTitle: 'Food Standards Agency: Caffeine', sourceUrl: 'https://www.food.gov.uk/safety-hygiene/food-supplements' },
+  sorbitol: { whatItIs: 'Sorbitol is a sugar alcohol used as a sweetener and found naturally in some fruit.', whereFound: 'Sugar-free sweets and gum, some medicines, apples, pears and stone fruit.', triggerLevel: 'recognised', triggerSummary: 'A recognised fermentable-carbohydrate trigger for some people.', commonSymptoms: FODMAP_SYMPTOMS, symptomContext: 'Sorbitol can be incompletely absorbed and can draw water into the bowel and ferment, especially at larger amounts.', ...IBS_SOURCE },
+  niacin: { whatItIs: 'Niacin is vitamin B3, a water-soluble vitamin used in energy metabolism. “Niacin”, “vitamin B3” and “B3” are stored as one ingredient.', whereFound: 'Meat, fish, nuts, grains and foods fortified with vitamins.', triggerLevel: 'not-common', triggerSummary: 'Not a common intolerance trigger at the amounts normally present in food.', commonSymptoms: [], symptomContext: 'High-dose nicotinic-acid supplements can cause flushing, itching, headache or dizziness, but supplement doses are very different from ordinary food exposure.', sourceTitle: 'NIH: Niacin fact sheet', sourceUrl: 'https://ods.od.nih.gov/factsheets/Niacin-Consumer/' },
 };
+
+const FRUCTAN_IDS = new Set(['garlic', 'onion', 'leek', 'barley', 'rye']);
+const OTHER_FODMAP_IDS = new Set(['apple', 'pear', 'mango', 'honey', 'cabbage', 'cauliflower', 'mushroom', 'lentil', 'chickpea', 'bean', 'pea']);
+const POLYOL_IDS = new Set(['mannitol', 'xylitol', 'erythritol']);
+const ALLERGEN_IDS = new Set(['milk', 'egg', 'soy', 'peanut', 'almond', 'hazelnut', 'walnut', 'cashew', 'sesame', 'mustard', 'celery', 'fish', 'shellfish']);
+const MICRONUTRIENT_IDS = new Set(['thiamin', 'riboflavin', 'pantothenic-acid', 'vitamin-b6', 'biotin', 'folate', 'vitamin-b12', 'vitamin-c', 'vitamin-d', 'iron', 'calcium']);
+
+function relatedTerms(id: string, record?: IngredientRecord): Set<string> {
+  return new Set([id, record?.name, ...(record?.parents ?? [])].filter(Boolean).map(value => normalizeIngredientText(String(value)).replace(/^off /, '')));
+}
+
+function inferredProfile(id: string, record?: IngredientRecord): IngredientProfile {
+  const terms = relatedTerms(id, record);
+  const relatedTo = (...values: string[]) => values.some(value => terms.has(normalizeIngredientText(value)));
+  const normalizedName = normalizeIngredientText(record?.name ?? id);
+  const materiallyTransformed = /\b(?:oil|extract|flavou?r(?:ing)?|protein isolate|hydrolys(?:ed|ate))\b/.test(normalizedName);
+  if (FRUCTAN_IDS.has(id) || (!materiallyTransformed && relatedTo('garlic', 'onion', 'leek', 'barley', 'rye'))) return {
+    triggerLevel: 'recognised', triggerSummary: 'A recognised source of fermentable carbohydrates that can trigger symptoms in some people with IBS.', commonSymptoms: FODMAP_SYMPTOMS,
+    symptomContext: 'Fructans can be poorly absorbed and then fermented in the bowel. Portion size and the total amount of similar carbohydrates eaten that day can change the response.', ...IBS_SOURCE,
+  };
+  if (OTHER_FODMAP_IDS.has(id) || relatedTo('legume', 'pulse')) return {
+    triggerLevel: 'possible', triggerSummary: 'Known to contain carbohydrates that can trigger gut symptoms in some people with IBS.', commonSymptoms: FODMAP_SYMPTOMS,
+    symptomContext: 'Tolerance is individual and often depends on portion size, ripeness, processing and other fermentable foods eaten at the same time.', ...IBS_SOURCE,
+  };
+  if (POLYOL_IDS.has(id) || relatedTo('sugar alcohol', 'polyol')) return {
+    triggerLevel: 'recognised', triggerSummary: 'A recognised dose-related digestive trigger for some people.', commonSymptoms: FODMAP_SYMPTOMS,
+    symptomContext: 'Sugar alcohols can be incompletely absorbed, draw water into the bowel and ferment. Larger servings are more likely to cause symptoms.', ...IBS_SOURCE,
+  };
+  if (ALLERGEN_IDS.has(id) || (!materiallyTransformed && relatedTo('tree nut', 'crustacean', 'mollusc'))) return {
+    triggerLevel: 'recognised', triggerSummary: 'A recognised food allergen for some people; food allergy is different from food intolerance.', commonSymptoms: ['Itching or hives', 'Swelling of the lips, face or throat', 'Vomiting or diarrhoea', 'Cough, wheeze or breathing difficulty'],
+    symptomContext: 'Allergic reactions can be rapid and serious. Bellywise diary correlations cannot diagnose allergy and should never be used to test a food that has caused swelling or breathing symptoms.', ...ALLERGY_SOURCE,
+  };
+  if (id === 'inulin' || relatedTo('inulin', 'chicory root fibre', 'chicory root fiber')) return {
+    triggerLevel: 'recognised', triggerSummary: 'A highly fermentable fibre that can trigger gut symptoms in some people.', commonSymptoms: FODMAP_SYMPTOMS,
+    symptomContext: 'Inulin is fermented by gut bacteria. The amount eaten and how quickly fibre intake increased can strongly affect symptoms.', ...IBS_SOURCE,
+  };
+  if (id === 'sulphites' || relatedTo('sulphite', 'sulfite', 'sulphur dioxide', 'sulfur dioxide')) return {
+    triggerLevel: 'recognised', triggerSummary: 'A recognised sensitivity trigger, particularly for some people with asthma.', commonSymptoms: ['Wheezing or cough', 'Chest tightness', 'Hives or flushing', 'Digestive upset'],
+    symptomContext: 'This is not the same as a typical food intolerance. Breathing symptoms need medical advice, and sudden or severe breathing difficulty needs emergency help.', sourceTitle: 'NHS: Food intolerance', sourceUrl: 'https://www.nhs.uk/conditions/food-intolerance/',
+  };
+  if (id === 'carbonation' || relatedTo('carbonated water')) return {
+    triggerLevel: 'possible', triggerSummary: 'Can cause upper-gut symptoms through swallowed carbon dioxide rather than an intolerance.', commonSymptoms: ['Belching', 'Bloating', 'Fullness or discomfort'],
+    symptomContext: 'Serving size, drinking speed and other ingredients in the drink may matter more than carbonation alone.', sourceTitle: 'NHS: Bloating', sourceUrl: 'https://www.nhs.uk/conditions/bloating/',
+  };
+  if (id === 'chilli' || relatedTo('chilli', 'chili pepper')) return {
+    triggerLevel: 'possible', triggerSummary: 'Spicy foods can aggravate digestive symptoms in some people, especially with IBS or reflux.', commonSymptoms: ['Heartburn or burning', 'Abdominal pain', 'Urgency or diarrhoea'],
+    symptomContext: 'Capsaicin produces heat and irritation rather than a classic intolerance. Amount and an individual’s usual exposure can affect the response.', sourceTitle: 'NHS: IBS symptoms and triggers', sourceUrl: 'https://www.nhs.uk/conditions/irritable-bowel-syndrome-ibs/symptoms/',
+  };
+  if (id === 'alcohol') return {
+    triggerLevel: 'possible', triggerSummary: 'Alcohol can aggravate digestive and other symptoms in some people.', commonSymptoms: ['Abdominal pain or diarrhoea', 'Bloating', 'Flushing', 'Headache or nausea'],
+    symptomContext: 'Amount matters, and wine, beer and mixed drinks contain other possible triggers such as sulphites, grains, fruit, carbonation or sweeteners.', sourceTitle: 'NHS: IBS symptoms and triggers', sourceUrl: 'https://www.nhs.uk/conditions/irritable-bowel-syndrome-ibs/symptoms/',
+  };
+  if (/\boil\b/.test(normalizedName) || relatedTo('vegetable oil', 'oil', 'fat')) return {
+    triggerLevel: 'possible', triggerSummary: 'The ingredient itself is not a common intolerance, although a high-fat meal can aggravate symptoms in some people.', commonSymptoms: ['Fullness or nausea', 'Abdominal discomfort', 'Diarrhoea in some people'],
+    symptomContext: 'The total meal, portion and cooking method are usually more informative than a small amount of this ingredient.', sourceTitle: 'NHS: IBS diet advice', sourceUrl: 'https://www.nhs.uk/conditions/irritable-bowel-syndrome-ibs/diet-lifestyle-and-medicines/',
+  };
+  if (relatedTo('dietary fibre', 'dietary fiber', 'vegetable fibre', 'vegetable fiber', 'fibre', 'fiber')) return {
+    triggerLevel: 'possible', triggerSummary: 'Fibre can alter bowel symptoms, particularly when the amount changes quickly.', commonSymptoms: ['Wind', 'Bloating', 'Cramping', 'A change in stool frequency or consistency'],
+    symptomContext: 'Different fibres behave differently. Portion size, fluid intake and a gradual increase can affect tolerance.', ...IBS_SOURCE,
+  };
+  if (MICRONUTRIENT_IDS.has(id)) return {
+    triggerLevel: 'not-common', triggerSummary: 'Not widely recognised as an intolerance trigger at ordinary food-fortification amounts.', commonSymptoms: [],
+    symptomContext: 'Concentrated supplements can have dose-related side effects that do not apply to the much smaller amounts normally present in food. Record a supplement separately if that is what you took.', sourceTitle: 'NHS: Vitamins and minerals', sourceUrl: 'https://www.nhs.uk/conditions/vitamins-and-minerals/',
+  };
+  if (!record) return {
+    triggerLevel: 'unknown', triggerSummary: 'There is not enough reliable catalogue information to classify this personal ingredient.', commonSymptoms: [],
+    symptomContext: 'Check the spelling and exact substance. Bellywise can still compare it with your diary, but it cannot provide a trustworthy general symptom profile for an unrecognised entry.',
+  };
+  return {
+    triggerLevel: 'not-common', triggerSummary: `${record.name} is not widely recognised as a common food-intolerance trigger at normal food amounts.`, commonSymptoms: [],
+    symptomContext: 'No characteristic intolerance symptom pattern is established for this ingredient itself. If your diary repeatedly links it with symptoms, consider the portion, preparation and other ingredients eaten alongside it.',
+  };
+}
 
 export function getIngredientInfo(id: string, fallbackName?: string): IngredientInfo {
   const record = byId.get(id) ?? ingredientCatalog.find(item => item.name === fallbackName);
-  const profile = PROFILE[id];
+  const profile = PROFILE[id] ?? inferredProfile(id, record);
   const name = record?.name ?? fallbackName ?? id;
   return {
     id, name, aliases: record?.aliases ?? [],
     whatItIs: profile?.whatItIs ?? record?.description ?? `${name} is a recognised entry in the Open Food Facts ingredient taxonomy.`,
     whereFound: profile?.whereFound ?? (record?.parents?.length ? `Related ingredient groups: ${record.parents.join(', ')}.` : 'Where it appears depends on the product and recipe. Check the exact label.'),
-    symptomContext: profile?.symptomContext ?? 'This ingredient is not automatically a cause of symptoms. Bellywise only shows associations in your own completed diary, and foods eaten together can produce the same signal.',
+    triggerLevel: profile.triggerLevel, triggerSummary: profile.triggerSummary, commonSymptoms: profile.commonSymptoms, symptomContext: profile.symptomContext,
     sourceTitle: profile?.sourceTitle, sourceUrl: profile?.sourceUrl,
   };
 }

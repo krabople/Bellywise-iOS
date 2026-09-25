@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addDays, analyzePatterns, BUILT_IN_SYMPTOMS, getDemoData, ingredientsFromNames, isDateKey, localDateKey, resolveFood, suggestIngredientRecords } from '../src/domain';
+import { addDays, analyzePatterns, BUILT_IN_SYMPTOMS, getDemoData, getIngredientInfo, ingredientsFromNames, isDateKey, localDateKey, resolveFood, suggestIngredientRecords } from '../src/domain';
 import { AppData } from '../src/domain/types';
 import { benjaminiHochberg, differenceInterval, fisherExact, wilsonInterval } from '../src/domain/statistics';
 
@@ -70,6 +70,32 @@ test('preparation variants share a food family while materially different deriva
 test('unknown manual ingredients get useful close catalogue matches', () => {
   assert.equal(suggestIngredientRecords('niacn')[0]?.id, 'niacin');
   assert(suggestIngredientRecords('sunflour lecithin').some(item => /sunflower lecithin/i.test(item.name)));
+});
+
+test('ingredient information distinguishes recognised triggers from ordinary and unknown ingredients', () => {
+  const garlic = getIngredientInfo('garlic');
+  assert.equal(garlic.triggerLevel, 'recognised');
+  assert.match(garlic.triggerSummary, /fermentable carbohydrates/i);
+  assert(garlic.commonSymptoms.includes('Bloating'));
+
+  const milk = getIngredientInfo('milk');
+  assert.equal(milk.triggerLevel, 'recognised');
+  assert.match(milk.triggerSummary, /lactose intolerance and milk allergy/i);
+  assert(milk.commonSymptoms.some(symptom => /swelling/i.test(symptom)));
+
+  const rice = getIngredientInfo('rice');
+  assert.equal(rice.triggerLevel, 'not-common');
+  assert.equal(rice.commonSymptoms.length, 0);
+  assert.doesNotMatch(rice.symptomContext, /not automatically a cause/i);
+
+  const garlicOilId = ingredientsFromNames(['garlic oil'])[0].id;
+  const garlicOil = getIngredientInfo(garlicOilId);
+  assert.equal(garlicOil.triggerLevel, 'possible');
+  assert.doesNotMatch(garlicOil.triggerSummary, /fermentable carbohydrates/i);
+
+  const unknown = getIngredientInfo('custom-mystery-powder', 'Mystery powder');
+  assert.equal(unknown.triggerLevel, 'unknown');
+  assert.match(unknown.triggerSummary, /not enough reliable/i);
 });
 
 test('known Fisher, Wilson and BH numerical values', () => {

@@ -190,7 +190,6 @@ export function parseIngredientLabel(text: string, options: IngredientLabelOptio
       result.warnings.push('The photo did not contain a clear run of recognised ingredient phrases. Retake it closer to the list, or add missing ingredients yourself.');
       return result;
     }
-    result.warnings.push('No heading was needed: Bellywise found a run of whole ingredient phrases in the catalogue. Check the recognised and omitted text before saving.');
   } else if (options.source === 'manual') {
     result.ingredients = rawCandidates;
   } else {
