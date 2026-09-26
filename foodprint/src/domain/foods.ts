@@ -6,7 +6,7 @@ export { ingredientCatalog, ingredientFromText, ingredientsFromNames } from './i
 const normalize = normalizeIngredientText;
 
 /** Recipes are editable hypotheses, not brand-specific ingredient lists. */
-const RECIPES: { names: string[]; ingredients: string[]; question?: 'grain' | 'milk' | 'cola' }[] = [
+const RECIPES: { names: string[]; ingredients: string[]; question?: 'grain' | 'milk' | 'cola' | 'cheese' }[] = [
   { names: ['bread', 'white bread', 'brown bread', 'wholemeal bread', 'toast', 'baguette', 'sourdough', 'pitta', 'pita', 'bagel', 'bread roll'], ingredients: ['wheat', 'yeast', 'salt'], question: 'grain' },
   { names: ['gluten free bread', 'gluten free toast', 'gluten free bagel'], ingredients: ['rice', 'maize', 'tapioca', 'yeast', 'salt'] },
   { names: ['pasta', 'spaghetti', 'penne', 'macaroni', 'fusilli', 'linguine'], ingredients: ['wheat'], question: 'grain' },
@@ -27,7 +27,7 @@ const RECIPES: { names: string[]; ingredients: string[]; question?: 'grain' | 'm
   { names: ['granola', 'muesli'], ingredients: ['oats', 'raisin', 'almond', 'honey'] },
   { names: ['cornflakes', 'corn flakes'], ingredients: ['maize', 'barley', 'sugar'] },
   { names: ['weetabix', 'wheat cereal'], ingredients: ['wheat', 'barley'] },
-  { names: ['scrambled eggs', 'scrambled egg'], ingredients: ['egg', 'milk'], question: 'milk' },
+  { names: ['scrambled eggs', 'scrambled egg'], ingredients: ['egg', 'milk', 'lactose'], question: 'milk' },
   { names: ['omelette', 'omelet'], ingredients: ['egg', 'vegetable-oil'] },
   { names: ['french toast', 'eggy bread'], ingredients: ['wheat', 'egg', 'milk', 'lactose'], question: 'grain' },
   { names: ['milk', 'cows milk', 'whole milk', 'skimmed milk', 'semi skimmed milk'], ingredients: ['milk', 'lactose'], question: 'milk' },
@@ -37,7 +37,9 @@ const RECIPES: { names: string[]; ingredients: string[]; question?: 'grain' | 'm
   { names: ['soy milk', 'soya milk', 'soya drink'], ingredients: ['soy'] },
   { names: ['coconut milk', 'coconut cream'], ingredients: ['coconut'] },
   { names: ['yoghurt', 'yogurt', 'greek yoghurt', 'greek yogurt'], ingredients: ['milk', 'lactose'], question: 'milk' },
-  { names: ['cheddar', 'parmesan', 'hard cheese', 'cheese', 'mozzarella', 'feta'], ingredients: ['milk'] },
+  { names: ['cheddar', 'parmesan', 'hard cheese', 'aged cheese'], ingredients: ['milk'] },
+  { names: ['mozzarella', 'feta', 'soft cheese', 'cream cheese', 'ricotta', 'cottage cheese'], ingredients: ['milk', 'lactose'] },
+  { names: ['cheese'], ingredients: ['milk', 'lactose'], question: 'cheese' },
   { names: ['ice cream', 'gelato', 'custard'], ingredients: ['milk', 'lactose', 'sugar'], question: 'milk' },
   { names: ['latte', 'cappuccino', 'flat white', 'coffee with milk'], ingredients: ['coffee', 'caffeine', 'milk', 'lactose'], question: 'milk' },
   { names: ['americano', 'espresso', 'black coffee', 'coffee', 'cold brew', 'iced coffee'], ingredients: ['coffee', 'caffeine'] },
@@ -111,6 +113,7 @@ const RECIPES: { names: string[]; ingredients: string[]; question?: 'grain' | 'm
 export const foodCatalogSize = RECIPES.reduce((count, item) => count + item.names.length, 0) + ingredientCatalog.length;
 const grainOptions = [{ id: 'standard', label: 'Regular recipe' }, { id: 'gluten-free', label: 'Gluten-free' }];
 const milkOptions = [{ id: 'standard', label: 'Regular dairy' }, { id: 'lactose-free', label: 'Lactose-free dairy' }, { id: 'oat', label: 'Oat' }, { id: 'soy', label: 'Soy' }, { id: 'almond', label: 'Almond' }, { id: 'dairy-free', label: 'Other dairy-free' }];
+const cheeseOptions = [{ id: 'fresh-soft', label: 'Fresh / soft cheese' }, { id: 'hard-aged', label: 'Hard / aged cheese' }, { id: 'lactose-free', label: 'Lactose-free cheese' }];
 
 function makeIngredient(id: string, confidence: Confidence = 'inferred'): IngredientExposure {
   const known = ingredientCatalog.find(item => item.id === id) ?? findIngredientRecord(id);
@@ -132,7 +135,7 @@ export function resolveFood(input: string, variant?: string): FoodResolution {
   const stripped = query.replace(/\b(?:gluten free|lactose free|dairy free|milk free|vegan|decaf|decaffeinated|caffeine free|alcohol free|non alcoholic|sugar free|diet|zero sugar)\b/g, '').replace(/\b(?:without|no)\s+.*$/, '').replace(/\s+/g, ' ').trim();
   const exactRecipe = RECIPES.find(item => item.names.includes(query));
   const recipe = exactRecipe ?? RECIPES.find(item => item.names.includes(stripped));
-  const exactIngredient = ingredientCatalog.find(item => item.aliases.some(alias => normalize(alias) === stripped));
+  const exactIngredient = findIngredientRecord(stripped);
   let ids = recipe ? [...recipe.ingredients] : exactIngredient ? [exactIngredient.id] : [];
   let matched = Boolean(recipe || exactIngredient);
   const compositeIngredients = new Map<string, IngredientExposure>();
@@ -155,6 +158,7 @@ export function resolveFood(input: string, variant?: string): FoodResolution {
   }
   if (dairyFree) ids = ids.filter(id => !['milk', 'lactose'].includes(id));
   if (lactoseFree) ids = ids.filter(id => id !== 'lactose');
+  if (recipe?.question === 'cheese' && variantText === 'hard aged') ids = ids.filter(id => id !== 'lactose');
   if (decaf) ids = ids.filter(id => id !== 'caffeine');
   if (alcoholFree) ids = ids.filter(id => id !== 'alcohol');
   if (sugarFree) {
@@ -174,6 +178,7 @@ export function resolveFood(input: string, variant?: string): FoodResolution {
   if (recipe?.question === 'grain' && !glutenFree && !variant) questions.push({ id: 'grain', prompt: 'Which version did you have?', options: grainOptions });
   if (recipe?.question === 'milk' && !dairyFree && !lactoseFree && !variant) questions.push({ id: 'milk', prompt: 'Which milk or dairy was used?', options: milkOptions });
   if (recipe?.question === 'cola' && !sugarFree && !variant) questions.push({ id: 'cola', prompt: 'Which version did you drink?', options: [{ id: 'standard', label: 'Regular' }, { id: 'sugar-free', label: 'Diet / sugar-free' }] });
+  if (recipe?.question === 'cheese' && !lactoseFree && !variant) questions.push({ id: 'cheese', prompt: 'Which kind of cheese was it?', options: cheeseOptions });
   const ingredients = ids.map(id => compositeIngredients.get(id) ?? makeIngredient(id));
   if (!ingredients.length && name) ingredients.push(ingredientFromText(name, 'inferred'));
   return {

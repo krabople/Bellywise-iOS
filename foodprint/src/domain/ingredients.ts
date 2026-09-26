@@ -31,7 +31,8 @@ export const normalizeIngredientText = (text: string) => text.toLowerCase().norm
   .replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 
 const CORE_ROWS: [string, string, string[]?][] = [
-  ['wheat', 'Wheat', ['wheat flour', 'semolina', 'durum wheat', 'spelt', 'bulgur', 'couscous', 'gluten']],
+  ['wheat', 'Wheat', ['wheat flour', 'semolina', 'durum wheat', 'spelt', 'bulgur', 'couscous']],
+  ['gluten', 'Gluten', ['wheat gluten', 'vital wheat gluten']],
   ['barley', 'Barley', ['barley malt', 'malt extract']], ['rye', 'Rye'], ['oats', 'Oats', ['oat', 'oat flour']],
   ['rice', 'Rice', ['rice flour', 'brown rice']], ['maize', 'Maize / corn', ['maize', 'corn', 'cornflour', 'corn starch', 'corn flour']],
   ['tapioca', 'Tapioca', ['tapioca starch']], ['potato', 'Potato', ['potatoes', 'potato starch']],
@@ -145,12 +146,23 @@ const stripQualifiers = (value: string) => normalizeIngredientText(value
   .replace(/\b\d+(?:\.\d+)?\s*%\b/g, '')
   .replace(/\b(?:organic|pasteurised|pasteurized|fortified|enriched|fresh|raw|dried|dry|dehydrated|freeze[ -]dried|frozen|whole|chopped|minced|sliced|crushed|ground|grated|peeled|powdered|roasted|toasted|cooked|red|green|yellow|white|brown|orange|purple|ripe|unripe|unsweetened|sweetened|concentrated)\b/gi, ''));
 
+function inflectionCandidates(value: string): string[] {
+  const words = value.split(' ');
+  const last = words.pop() ?? '';
+  const stems = new Set<string>();
+  if (/[^aeiou]ies$/.test(last)) stems.add(`${last.slice(0, -3)}y`);
+  if (/(?:ches|shes|sses|xes|zes|oes)$/.test(last)) stems.add(last.slice(0, -2));
+  if (last.endsWith('s') && !/(?:ss|us|is)$/.test(last)) stems.add(last.slice(0, -1));
+  return [...stems].filter(Boolean).map(candidate => [...words, candidate].join(' '));
+}
+
 export function findIngredientRecord(value: string, custom: IngredientRecord[] = []): IngredientRecord | undefined {
   const normalized = normalizeIngredientText(value);
   if (!normalized || exclusions.test(normalized)) return undefined;
   const clean = stripQualifiers(value.replace(/\([^)]*\)/g, '')).replace(/^gluten\s+free\s+/, '');
-  const customMatch = custom.find(record => [record.name, ...record.aliases].some(alias => normalizeIngredientText(alias) === clean));
-  const match = customMatch ?? aliasOwner.get(clean) ?? byId.get(clean) ?? byId.get(normalized.replace(/^en /, ''));
+  const candidates = [clean, ...inflectionCandidates(clean)];
+  const customMatch = custom.find(record => [record.name, ...record.aliases].some(alias => candidates.includes(normalizeIngredientText(alias))));
+  const match = customMatch ?? candidates.map(candidate => aliasOwner.get(candidate)).find(Boolean) ?? byId.get(clean) ?? byId.get(normalized.replace(/^en /, ''));
   return match && !customMatch ? canonicalFamily(match) : match;
 }
 
@@ -230,6 +242,26 @@ export function ingredientsFromNames(names: string[], confidence: Confidence = '
   })).values()];
 }
 
+/**
+ * Add well-established components for pattern analysis without presenting them
+ * as literal label ingredients. Gluten is present in wheat, barley and rye;
+ * an explicit gluten-free entry never contains those source grains here.
+ */
+export function expandIngredientExposuresForAnalysis(ingredients: IngredientExposure[]): IngredientExposure[] {
+  const expanded = new Map<string, IngredientExposure>();
+  const add = (ingredient: IngredientExposure) => {
+    const previous = expanded.get(ingredient.id);
+    expanded.set(ingredient.id, previous?.confidence === 'confirmed'
+      ? previous
+      : { ...ingredient, confidence: ingredient.confidence === 'confirmed' ? 'confirmed' : previous?.confidence ?? ingredient.confidence });
+  };
+  for (const ingredient of ingredients) {
+    add(ingredient);
+    if (['wheat', 'barley', 'rye'].includes(ingredient.id)) add({ id: 'gluten', name: 'Gluten', confidence: ingredient.confidence });
+  }
+  return [...expanded.values()];
+}
+
 type IngredientProfile = Pick<IngredientInfo, 'triggerLevel' | 'triggerSummary' | 'commonSymptoms' | 'symptomContext' | 'sourceTitle' | 'sourceUrl'>
   & Partial<Pick<IngredientInfo, 'whatItIs' | 'whereFound'>>;
 
@@ -238,6 +270,7 @@ const ALLERGY_SOURCE = { sourceTitle: 'NHS: Food allergy symptoms', sourceUrl: '
 const FODMAP_SYMPTOMS = ['Bloating', 'Wind', 'Abdominal pain or cramps', 'Diarrhoea or constipation'];
 
 const PROFILE: Record<string, IngredientProfile> = {
+  gluten: { whatItIs: 'Gluten is a group of proteins found in wheat, barley and rye.', whereFound: 'Foods containing wheat, barley or rye, including most bread, pasta, cakes, many cereals, some sauces and most beer.', triggerLevel: 'recognised', triggerSummary: 'A medically recognised trigger in coeliac disease and a reported trigger in non-coeliac gluten sensitivity.', commonSymptoms: ['Diarrhoea or constipation', 'Abdominal pain', 'Bloating and wind', 'Indigestion', 'Tiredness'], symptomContext: 'Coeliac disease is an autoimmune condition, not a food intolerance or allergy. Wheat can also cause symptoms through wheat allergy or fermentable fructans, so a diary link with gluten cannot identify the mechanism. Ask a clinician about coeliac testing before removing gluten, because testing is less reliable after starting a gluten-free diet.', sourceTitle: 'NHS: Coeliac disease', sourceUrl: 'https://www.nhs.uk/conditions/coeliac-disease/' },
   lactose: { whatItIs: 'Lactose is the natural sugar in milk and dairy foods.', whereFound: 'Milk, yoghurt, soft cheese, cream and foods made with milk.', triggerLevel: 'recognised', triggerSummary: 'A well-established digestive trigger in people who make too little lactase.', commonSymptoms: ['Bloating', 'Wind', 'Abdominal pain or rumbling', 'Diarrhoea or constipation', 'Nausea'], symptomContext: 'Undigested lactose can reach the colon, draw in fluid and ferment. Symptoms depend on the amount eaten and the person’s remaining lactase activity; many people tolerate some lactose.', sourceTitle: 'NHS: Lactose intolerance', sourceUrl: 'https://www.nhs.uk/conditions/lactose-intolerance/' },
   milk: { whatItIs: 'Milk contains lactose sugar and milk proteins. These can be involved in different kinds of reaction.', whereFound: 'Milk, yoghurt, cream, soft cheese, butter and many processed foods.', triggerLevel: 'recognised', triggerSummary: 'A well-known symptom trigger for some people, with lactose intolerance and milk allergy being different conditions.', commonSymptoms: ['Bloating, wind or abdominal pain', 'Diarrhoea or nausea', 'Itching, hives or swelling in allergy', 'Cough or wheeze in allergy'], symptomContext: 'Lactose intolerance mainly causes digestive symptoms and often depends on dose. Milk-protein allergy can affect the skin or breathing and may be serious. A diary cannot tell these mechanisms apart.', sourceTitle: 'NHS: Lactose intolerance and milk allergy', sourceUrl: 'https://www.nhs.uk/conditions/lactose-intolerance/' },
   wheat: { whatItIs: 'Wheat is a cereal grain. It contains gluten as well as other proteins and fermentable carbohydrates.', whereFound: 'Bread, pasta, pastry, many cereals, sauces and processed foods.', triggerLevel: 'recognised', triggerSummary: 'A well-known trigger, but several different mechanisms can be responsible.', commonSymptoms: FODMAP_SYMPTOMS, symptomContext: 'Wheat fructans can aggravate gut symptoms in some people with IBS. Coeliac disease and wheat allergy are different conditions and may cause other symptoms. A diary cannot distinguish them, and coeliac testing should happen before removing gluten.', sourceTitle: 'NHS: Coeliac disease', sourceUrl: 'https://www.nhs.uk/conditions/coeliac-disease/' },

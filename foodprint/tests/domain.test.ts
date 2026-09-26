@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addDays, analyzePatterns, BUILT_IN_SYMPTOMS, getDemoData, getIngredientInfo, ingredientsFromNames, isDateKey, localDateKey, resolveFood, suggestIngredientRecords } from '../src/domain';
+import { addDays, analyzePatterns, BUILT_IN_SYMPTOMS, expandIngredientExposuresForAnalysis, getDemoData, getIngredientInfo, ingredientsFromNames, isDateKey, localDateKey, resolveFood, suggestIngredientRecords } from '../src/domain';
 import { AppData } from '../src/domain/types';
 import { benjaminiHochberg, differenceInterval, fisherExact, wilsonInterval } from '../src/domain/statistics';
 
@@ -55,6 +55,27 @@ test('canonical ingredient aliases collapse vitamin names without inventing free
   assert.equal(vitamins[0].name, 'Niacin (vitamin B3)');
   assert(!ingredientsFromNames(['gluten free']).some(item => item.id === 'wheat'));
   assert.equal(ingredientsFromNames(['gluten-free oats'])[0].id, 'oats');
+  assert.equal(ingredientsFromNames(['gluten'])[0].id, 'gluten');
+});
+
+test('analysis derives gluten from its source grains but not from gluten-free wording', () => {
+  assert.deepEqual(expandIngredientExposuresForAnalysis(ingredientsFromNames(['wheat'])).map(item => item.id), ['wheat', 'gluten']);
+  assert(!expandIngredientExposuresForAnalysis(ingredientsFromNames(['gluten-free oats'])).some(item => item.id === 'gluten'));
+  const data = synthetic();
+  for (let index = 0; index < data.meals.length; index++) data.meals[index].ingredients = ingredientsFromNames(index % 2 === 0 ? ['wheat'] : ['rice']);
+  const gluten = analyzePatterns(data, { now, window: 'same-day' }).patterns.find(item => item.ingredientId === 'gluten');
+  assert(gluten);
+  assert.equal(gluten.ingredientName, 'Gluten');
+  assert.equal(gluten.exposedSymptomDays, 21);
+});
+
+test('cheese recipes distinguish likely lactose exposure by type', () => {
+  assert(resolveFood('cheese').questions.some(question => question.id === 'cheese'));
+  assert(resolveFood('cheese').ingredients.some(item => item.id === 'lactose'));
+  assert(!resolveFood('cheese', 'hard-aged').ingredients.some(item => item.id === 'lactose'));
+  assert(resolveFood('mozzarella').ingredients.some(item => item.id === 'lactose'));
+  assert(!resolveFood('cheddar').ingredients.some(item => item.id === 'lactose'));
+  assert(resolveFood('scrambled eggs', 'standard').ingredients.some(item => item.id === 'lactose'));
 });
 
 test('preparation variants share a food family while materially different derivatives remain distinct', () => {
@@ -65,6 +86,15 @@ test('preparation variants share a food family while materially different deriva
   assert.notEqual(ingredientsFromNames(['garlic oil'])[0].id, 'garlic');
   assert.notEqual(ingredientsFromNames(['wild garlic'])[0].id, 'garlic');
   assert.equal(suggestIngredientRecords('fresh garlic')[0]?.id, 'garlic');
+});
+
+test('singular and plural ingredient names resolve to the same catalogue entry', () => {
+  const pistachio = ingredientsFromNames(['pistachio', 'pistachios']);
+  assert.equal(pistachio.length, 1);
+  assert.equal(pistachio[0].id, 'off-pistachio-nuts');
+  assert.equal(resolveFood('pistachios').ingredients[0].id, 'off-pistachio-nuts');
+  assert.equal(getIngredientInfo(pistachio[0].id).triggerLevel, 'recognised');
+  assert.notEqual(ingredientsFromNames(['hummus'])[0].id, ingredientsFromNames(['hummu'])[0].id, 'a final s in a non-plural word is preserved');
 });
 
 test('unknown manual ingredients get useful close catalogue matches', () => {
@@ -149,14 +179,12 @@ test('duplicate meals and symptoms never inflate the number of observations', ()
   assert.deepEqual(analyzePatterns(data, { now }), baseline);
 });
 
-test('same-day symptoms before ingredient exposure cannot get the stronger label', () => {
+test('same-day symptoms before ingredient exposure do not count as outcomes', () => {
   const data = synthetic();
   // Use explicit local times so this test is independent of the host timezone.
   for (const symptom of data.symptoms) symptom.occurredAt = new Date(`${localDateKey(symptom.occurredAt)}T05:00:00`).toISOString();
   const milk = analyzePatterns(data, { now, window: 'same-day' }).patterns.find(item => item.ingredientId === 'milk');
-  assert(milk);
-  assert.equal(milk.status, 'exploratory');
-  assert(milk.cautions.some(item => item.includes('before the first recorded')));
+  assert.equal(milk, undefined);
 });
 
 test('sparse days and inferred recipes cannot receive an emerging label', () => {
