@@ -159,6 +159,19 @@ test('drinks respect milk alternatives, decaf, alcohol-free and unknown sweetene
   assert.notEqual(ingredientsFromNames(['dairy-free cream'])[0].id, 'milk');
 });
 
+test('water is never tested as a symptom trigger while other drink components remain eligible', () => {
+  const data = synthetic();
+  for (let index = 0; index < data.meals.length; index++) {
+    data.meals[index].name = index % 2 === 0 ? 'Sparkling water' : 'Rice';
+    data.meals[index].kind = 'drink';
+    data.meals[index].ingredients = ingredientsFromNames(index % 2 === 0 ? ['water', 'carbonation'] : ['rice']);
+  }
+  const patterns = analyzePatterns(data, { now, window: 'same-day' }).patterns;
+  assert(!patterns.some(item => item.ingredientId === 'water'));
+  assert(patterns.some(item => item.ingredientId === 'carbonation'));
+  assert(patterns.every(item => !item.coOccursWith.includes('Water')));
+});
+
 test('a repeated strong pattern is found with explanatory comparison counts', () => {
   const result = analyzePatterns(synthetic(), { now });
   const milk = result.patterns.find(item => item.ingredientId === 'milk');

@@ -6,6 +6,8 @@ import { AnalysisResult, AppData, DayCheckIn, ExposureWindow, PatternResult } fr
 
 export const MINIMUM_COMPLETE_DAYS = 14;
 export const MINIMUM_COMPARISON_DAYS = 6;
+/** Essential carrier ingredients that are useful in the diary but not sensible trigger hypotheses. */
+const NON_ANALYSABLE_INGREDIENT_IDS = new Set(['water']);
 interface Day {
   date: string;
   checkIn?: DayCheckIn;
@@ -63,7 +65,8 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
   const definitions = new Map([...BUILT_IN_SYMPTOMS, ...data.customSymptoms].map(symptom => [symptom.id, symptom]));
   // Positive feelings are separate outcomes and never stand in for symptom-free days.
   const symptomIds = [...new Set(ordered.flatMap(day => [...day.symptoms]))].filter(id => definitions.has(id));
-  const ingredientIds = [...new Set(ordered.flatMap(day => [...day.ingredients.keys()]))];
+  const ingredientIds = [...new Set(ordered.flatMap(day => [...day.ingredients.keys()]))]
+    .filter(id => !NON_ANALYSABLE_INGREDIENT_IDS.has(id));
   const names = new Map(ingredientCatalog.map(item => [item.id, item.name]));
   for (const day of ordered) for (const [id, value] of day.ingredients) names.set(id, value.name);
   const rows: PatternResult[] = [];

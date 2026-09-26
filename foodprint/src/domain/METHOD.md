@@ -39,6 +39,8 @@ An exposure day is confirmed if any logged meal explicitly confirms that ingredi
 
 Food and drink entries share the same exposure logic. A `kind` field distinguishes them in the journal, defaulting to food for older records. Coffee/tea, alternative milks, juices and alcoholic drinks use editable recipes; decaf and alcohol-free text remove the relevant inferred ingredient. This does not guarantee zero trace caffeine or alcohol. Sugar-free cola retains an unresolved sweetener placeholder until its actual label is reviewed, rather than inventing a particular sweetener. Reviewed raw label text can be retained separately from canonical ingredient names for audit.
 
+Plain water is retained in food and drink records but is excluded from the analysis test family, so it can never be shown as a symptom pattern or as a co-occurring suspect. Other components of a drink, including carbonation, caffeine, alcohol, sugar and sweeteners, remain eligible for comparison.
+
 A Jaccard overlap of at least .8 across at least 3 shared days flags co-ingredients as difficult to separate. The engine also compares high-stress frequency between groups and, with at least 3 exposed and 3 unexposed lower-stress days, reports a lower-stress sensitivity effect. A 30-point difference in high-stress frequency or a 20-point weakening on lower-stress days prevents the stronger label. This is a confounding screen, not a fitted multivariable or causal adjustment. A clinician can decide whether controlled changes or testing are appropriate; the app should never direct allergy re-challenges or unsupervised restrictive diets.
 
 ## Primary methodological references
