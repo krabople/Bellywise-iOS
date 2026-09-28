@@ -13,11 +13,16 @@ export function getDemoData(referenceDate: Date = new Date()): AppData {
     const wheat = index % 3 !== 0;
     const highStress = index % 9 === 0;
     const hasBloating = hasMilk ? index % 7 !== 1 || index % 2 === 0 : index % 13 === 0;
+    const dairyBreakfast = index % 7 === 0
+      ? { name: 'Yoghurt with blueberries', ingredients: ['Milk', 'Lactose', 'Blueberries'] }
+      : index % 7 === 1
+        ? { name: 'Porridge with milk and blueberries', ingredients: ['Oats', 'Milk', 'Lactose', 'Blueberries'] }
+        : { name: 'Rice pudding with blueberries', ingredients: ['Rice', 'Milk', 'Lactose', 'Blueberries'] };
     result.checkIns.push({ date: day, complete: true, trackedSymptomIds: BUILT_IN_SYMPTOMS.map(item => item.id), stress: (highStress ? 4 : 2) as Level, sleepHours: highStress ? 6 : 7.5 });
     result.meals.push({
-      id: `demo-breakfast-${index}`, name: hasMilk ? 'Yoghurt with blueberries' : 'Oats with blueberries',
+      id: `demo-breakfast-${index}`, name: hasMilk ? dairyBreakfast.name : 'Oats with blueberries',
       eatenAt: new Date(`${day}T08:15:00`).toISOString(), source: 'typed',
-      ingredients: ingredientsFromNames(hasMilk ? ['Milk', 'Lactose', 'Blueberries'] : ['Oats', 'Blueberries']),
+      ingredients: ingredientsFromNames(hasMilk ? dairyBreakfast.ingredients : ['Oats', 'Blueberries']),
     });
     result.meals.push({
       id: `demo-lunch-${index}`, name: wheat ? 'Chicken sandwich' : 'Chicken and rice bowl',

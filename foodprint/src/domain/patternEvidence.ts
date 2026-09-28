@@ -31,7 +31,7 @@ export function evidenceContext(id: string, name: string): string {
   return `${info.triggerSummary} This background does not measure your personal likelihood of intolerance or prove it explains this particular feeling.`;
 }
 
-/** Collapse only identical exposure timing and evidence. Partial overlap remains independently visible. */
+/** Prefer ingredients. A product is a fallback only for an entirely inseparable bundle. */
 export function groupPatternsForDisplay(patterns: PatternResult[], data: AppData): PatternResult[] {
   const exposures = data.meals.map(meal => ({ meal, ingredients: mealExposures(meal) }));
   const signatureParts = new Map<string, string[]>();
@@ -45,11 +45,19 @@ export function groupPatternsForDisplay(patterns: PatternResult[], data: AppData
     const linked = patterns.filter(p => !p.ingredientId.startsWith('food:') && p.symptomId === product.symptomId && p.window === product.window && signatures.get(p.ingredientId) === signatures.get(product.ingredientId)
       && p.exposedDays === product.exposedDays && p.unexposedDays === product.unexposedDays && p.exposedSymptomDays === product.exposedSymptomDays && p.unexposedSymptomDays === product.unexposedSymptomDays
       && strength[p.status] <= strength[product.status] && p.confirmedExposedDays <= product.confirmedExposedDays);
-    linked.forEach(p => hidden.add(p.id));
     const components = [...new Map(data.meals.filter(m => foodIdentity(m) === product.ingredientId).flatMap(m => mealExposures(m).filter(i => !i.id.startsWith('food:') && i.id !== 'water')).map(i => [i.id, i])).values()];
+    // Milk plus its lactose/protein is one food, not several independent ingredients.
+    // Every ingredient must be exclusive to this product; sharing just one subset
+    // (such as milk in a yoghurt breakfast) must not replace ingredient patterns.
+    const foods = components.filter(i => !i.derivedFrom && !['lactose', 'gluten', 'milk-protein'].includes(i.id));
+    const inseparable = foods.length >= 2
+      && components.every(i => signatures.get(i.id) === signatures.get(product.ingredientId))
+      && foods.every(i => linked.some(p => p.ingredientId === i.id));
+    if (!inseparable) continue;
+    linked.forEach(p => hidden.add(p.id));
     const priority = { recognised: 0, possible: 1, 'not-common': 2, unknown: 3 };
     components.sort((a, b) => priority[getIngredientInfo(a.id, a.name).triggerLevel] - priority[getIngredientInfo(b.id, b.name).triggerLevel]);
-    merged.set(product.id, { ...product, linkedIngredients: components.map(i => ({ id: i.id, name: i.name, explanation: evidenceContext(i.id, i.name) })), cautions: [...product.cautions, linked.length ? `${linked.length} ingredient comparisons share exactly the same exposure records and results, so they are shown together here. The diary cannot separate their effects.` : 'Ingredients are listed by established trigger context, not by proof that they caused this symptom.'] });
+    merged.set(product.id, { ...product, linkedIngredients: components.map(i => ({ id: i.id, name: i.name, explanation: evidenceContext(i.id, i.name) })), cautions: [...product.cautions, 'These ingredients only appear together in this food in your diary. Their matching results cannot tell them apart, so this exceptional pattern is shown for the whole food.'] });
   }
-  return patterns.filter(p => !hidden.has(p.id)).map(p => merged.get(p.id) ?? p);
+  return patterns.filter(p => !hidden.has(p.id) && (!p.ingredientId.startsWith('food:') || merged.has(p.id))).map(p => merged.get(p.id) ?? p);
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addDays, analyzePatterns, ingredientsFromNames, resolveFood, suggestFoodNames, ingredientCatalog } from '../src/domain';
+import { addDays, analyzePatterns, getDemoData, ingredientsFromNames, resolveFood, suggestFoodNames, ingredientCatalog } from '../src/domain';
 import { foodIdentity, groupPatternsForDisplay, mealExposures } from '../src/domain/patternEvidence';
 import { foodGroupHistory } from '../src/domain/foodGroups';
 import { isPackagingText } from '../src/domain/ingredientTextPolicy';
@@ -80,6 +80,25 @@ test('whole product groups identical component evidence without hiding independe
   data.meals.push(meal('Almonds', ['almond'], { id: 'independent', eatenAt: '2026-07-02T09:00:00Z' }));
   const independent = groupPatternsForDisplay(analyzePatterns(data, { now, window: 'same-day' }).patterns, data);
   assert(independent.some(p => p.ingredientId === 'almond'));
+  assert(!independent.some(p => p.ingredientId.startsWith('food:')), 'independent ingredient observations restore ingredient-first display');
+});
+
+test('example diary presents milk and lactose across different meals instead of a yoghurt-only pattern', () => {
+  const data = getDemoData(now);
+  const display = groupPatternsForDisplay(analyzePatterns(data, { now }).patterns, data);
+  for (const id of ['milk', 'lactose']) {
+    assert(display.some(p => p.ingredientId === id && p.symptomId === 'bloating' && p.status === 'emerging'), id);
+  }
+  assert(new Set(data.meals.filter(m => m.ingredients.some(i => i.id === 'milk')).map(m => m.name)).size >= 3);
+  assert(!display.some(p => p.ingredientId.startsWith('food:')));
+});
+
+test('a food and its derived components cannot masquerade as an inseparable multi-ingredient meal', () => {
+  const data = diary();
+  data.meals.forEach(m => { if (m.productCode) { m.name = 'Milk'; m.ingredients = ingredientsFromNames(['milk', 'lactose']); } });
+  const display = groupPatternsForDisplay(analyzePatterns(data, { now }).patterns, data);
+  assert(display.some(p => p.ingredientId === 'milk' && p.status === 'emerging'));
+  assert(!display.some(p => p.ingredientId.startsWith('food:')));
 });
 
 test('sleep imbalance reduces diary confidence without rewriting raw symptom rates', () => {

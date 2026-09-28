@@ -2,6 +2,13 @@
 
 This document describes the app changes and the release checks for this batch. The user initially requested local changes, then explicitly requested a GitHub push and TestFlight upload on 28 September 2026.
 
+## Follow-up fixes after TestFlight build 19
+
+- The photo selection surface is now outside the sheet's ScrollView, with its size bounded to the available screen. Instructions and controls scroll separately without moving the photo. A temporary browser fixture verified selection coordinates, a stationary image during control scrolling, and reachable buttons in portrait and short landscape layouts. The actual iPhone touch gesture still needs a device check.
+- Ingredient patterns are the default. Whole foods appear only for an entirely inseparable bundle of at least two food ingredients, all exclusive to that food, with matching evidence and no stronger ingredient result. A food plus derived components (for example milk and lactose) does not satisfy that rule. Independent ingredient appearances restore ingredient-first display.
+- The fictional diary now includes yoghurt, porridge and rice pudding as different milk/lactose meals. Regression tests verify that both milk and lactose remain visible as emerging bloating patterns after display grouping.
+- All 75 tests and TypeScript checks pass. These follow-up changes require a new TestFlight build; use this document to check the exact source revision and build status during release.
+
 ## Implemented
 
 - Custom symptom choices persist immediately. Adding a custom feeling saves it and returns to the originating feeling form, retaining time, severity and notes and selecting the new feeling. Settings use Done, not a second Save.
@@ -14,7 +21,7 @@ This document describes the app changes and the release checks for this batch. T
 - Headerless OCR can include consecutive recognised continuation lines. Photos now offer a drag-to-select region after on-device recognition. Vision's line bounds are converted to screen coordinates; selected lines go through the parser again. This is line selection, not a saved cropped photograph. Include entire ingredient lines. Temporary photos are removed after selection/cancellation/unmount.
 - Butter, cheese, hard cheese, yoghurt, cream, whey and casein have distinct identities instead of all becoming milk. Analysis derives estimated lactose from appropriate dairy, with lactose-free exceptions. Butter/ghee/hard cheese/casein do not automatically yield lactose. Dairy proteins retain a separate shared group. Gluten-free context is preserved for derived gluten checks. Existing legacy entries already collapsed to milk cannot always be reconstructed; review and correct those entries if necessary.
 - Local notification taps route to food entry, daily review or a specific pattern (the patterns list for a multi-pattern alert). Includes cold-start handling and response deduplication. No remote server, push token or Expo account added.
-- Whole-product/food comparisons are tested alongside ingredients before multiple-comparison correction. Identical ingredient evidence is grouped under the product; stronger or independently observed ingredient evidence is not hidden. Details list components with established trigger context first, without claiming a proven cause.
+- Whole-product/food comparisons are tested alongside ingredients before multiple-comparison correction. Ingredient patterns normally remain visible; whole-food display is reserved for an inseparable bundle of exclusive ingredients. Details list components with established trigger context first, without claiming a proven cause.
 - Sleep now joins stress as an alternative-explanation check. Meaningful imbalance or weakening on better-rested days prevents the stronger diary-evidence label. Notes remain human-readable context and report content, with no speculative medical text interpretation.
 - Clinical interpretation confidence is separate from statistical diary strength. Limited or uncommon trigger context gets an explicit lower-confidence label. No invented population probability, numerical prevalence prior, or changed p-value.
 - Next-day timeline squares explicitly pair food day D with outcome day D+1; tapping shows both dates. Unfinished or untracked outcomes are dashed. Charts exclude unfinished current/future outcome dates and explain that raw timeline entries may not be eligible statistical comparisons.
