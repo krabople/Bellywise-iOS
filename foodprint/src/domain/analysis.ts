@@ -1,5 +1,6 @@
+import { mealExposures, evidenceContext } from './patternEvidence';
 import { addDays, isDateKey, localDateKey } from './dates';
-import { expandIngredientExposuresForAnalysis, ingredientCatalog } from './ingredients';
+import { getIngredientInfo, ingredientCatalog } from './ingredients';
 import { benjaminiHochberg, differenceInterval, fisherExact } from './statistics';
 import { BUILT_IN_SYMPTOMS } from './symptoms';
 import { AnalysisResult, AppData, DayCheckIn, ExposureWindow, PatternResult } from './types';
@@ -17,7 +18,7 @@ interface Day {
   symptomTimes: Map<string, number[]>;
   unresolvedMeal: boolean;
 }
-interface Observation { date: string; exposed: boolean; confirmed: boolean; outcome: boolean; stress?: number; complete: boolean }
+interface Observation { date: string; exposed: boolean; confirmed: boolean; outcome: boolean; stress?: number; sleep?: number; complete: boolean }
 
 const pct = (value: number) => `${Math.round(value * 100)}%`;
 const difference = (rows: Observation[]) => {
@@ -47,8 +48,9 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
   for (const meal of data.meals) {
     const day = ensureDay(localDateKey(meal.eatenAt));
     if (!day) continue;
-    if (!meal.ingredients.length || meal.ingredients.some(item => item.confidence === 'inferred' && item.id.startsWith('custom-'))) day.unresolvedMeal = true;
-    for (const ingredient of expandIngredientExposuresForAnalysis(meal.ingredients)) {
+    const exposures = mealExposures(meal);
+    if (!exposures.length || meal.ingredients.some(item => item.confidence === 'inferred' && item.id.startsWith('custom-'))) day.unresolvedMeal = true;
+    for (const ingredient of exposures) {
       if (!ingredient.id) continue;
       const previous = day.ingredients.get(ingredient.id);
       day.ingredients.set(ingredient.id, { name: ingredient.name, confirmed: ingredient.confidence === 'confirmed' || Boolean(previous?.confirmed) });
@@ -91,7 +93,7 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
       if (!exposure && !exposureDayComplete) return [];
       // An uncertain exposure cannot become an unexposed control in confirmed-only mode.
       if (options.includeInferred === false && exposure && !exposure.confirmed) return [];
-      return [{ date: day.date, exposed: Boolean(exposure), confirmed: Boolean(exposure?.confirmed), outcome, stress: outcomeDay.checkIn?.stress, complete: exposureDayComplete && outcomeDayComplete }];
+      return [{ date: day.date, exposed: Boolean(exposure), confirmed: Boolean(exposure?.confirmed), outcome, stress: outcomeDay.checkIn?.stress, sleep: outcomeDay.checkIn?.sleepHours, complete: exposureDayComplete && outcomeDayComplete }];
     });
     const exposed = observations.filter(row => row.exposed), unexposed = observations.filter(row => !row.exposed);
     // Still include sparse hypotheses in correction; do not select tests by their outcomes.
@@ -104,7 +106,15 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
     const lowStressRiskDifference = lowStress.filter(row => row.exposed).length >= 3 && lowStress.filter(row => !row.exposed).length >= 3 ? difference(lowStress) : undefined;
     const stressKnownExposed = exposed.filter(row => row.stress !== undefined), stressKnownUnexposed = unexposed.filter(row => row.stress !== undefined);
     const stressDifference = stressKnownExposed.length && stressKnownUnexposed.length ? stressKnownExposed.filter(row => row.stress! >= 4).length / stressKnownExposed.length - stressKnownUnexposed.filter(row => row.stress! >= 4).length / stressKnownUnexposed.length : 0;
-    const confounded = Math.abs(stressDifference) >= 0.3 || (lowStressRiskDifference !== undefined && riskDifference - lowStressRiskDifference >= 0.2);
+    const stressConfounded = Math.abs(stressDifference) >= 0.3 || (lowStressRiskDifference !== undefined && riskDifference - lowStressRiskDifference >= 0.2);
+    // Sleep is the night before the outcome day, matching the daily check-in question.
+    const sleepExposed = exposed.filter(row => row.sleep !== undefined), sleepUnexposed = unexposed.filter(row => row.sleep !== undefined);
+    const rested = observations.filter(row => row.sleep !== undefined && row.sleep >= 7);
+    const restedRiskDifference = rested.filter(row => row.exposed).length >= 3 && rested.filter(row => !row.exposed).length >= 3 ? difference(rested) : undefined;
+    const mean = (rows: Observation[]) => rows.reduce((sum, row) => sum + row.sleep!, 0) / rows.length;
+    const sleepImbalance = sleepExposed.length >= 3 && sleepUnexposed.length >= 3 && Math.abs(mean(sleepExposed) - mean(sleepUnexposed)) >= 1.5;
+    const sleepConfounded = sleepImbalance || (restedRiskDifference !== undefined && riskDifference - restedRiskDifference >= 0.2);
+    const confounded = stressConfounded || sleepConfounded;
     const completeObservations = observations.filter(row => row.complete);
     const completeExposed = completeObservations.filter(row => row.exposed), completeUnexposed = completeObservations.filter(row => !row.exposed);
     const completeA = completeExposed.filter(row => row.outcome).length, completeC = completeUnexposed.filter(row => row.outcome).length;
@@ -134,10 +144,12 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
     if (unfinishedRows) cautions.push(`${unfinishedRows} comparison day${unfinishedRows === 1 ? '' : 's'} use explicitly logged food or symptoms from an unfinished day. Bellywise uses what was present but never assumes an unlogged ingredient or symptom was absent.`);
     if (ordered.some(day => day.unresolvedMeal)) cautions.push('Days containing unresolved meal names or meals with no ingredients are excluded. Review those entries so hidden ingredients are not treated as absent.');
     if (!enough) cautions.push(`Keep logging: this comparison needs at least ${MINIMUM_COMPLETE_DAYS} complete days, including ${MINIMUM_COMPARISON_DAYS} with and ${MINIMUM_COMPARISON_DAYS} without this ingredient.`);
-    if (confirmedExposedDays < exposed.length) cautions.push(`${exposed.length - confirmedExposedDays} exposure days use only inferred recipe ingredients. Confirm the actual label or recipe to improve this comparison.`);
+    if (confirmedExposedDays < exposed.length) cautions.push(`${exposed.length - confirmedExposedDays} exposure days rely on recipe estimates or derived components. A label or recipe check can strengthen direct ingredient evidence; estimated component amounts remain uncertain.`);
     if (coOccursWith.length) cautions.push(`Usually logged together with ${coOccursWith.slice(0, 4).join(', ')}. These entries cannot separate their individual contributions.`);
-    if (confounded) cautions.push('Stress differs between the comparison groups, or the pattern weakens on lower-stress days. This may explain part of the association.');
+    if (stressConfounded) cautions.push('Stress differs between the comparison groups, or the pattern weakens on lower-stress days. This may explain part of the association.');
     if (lowStressRiskDifference === undefined) cautions.push('There are not enough lower-stress days in both groups to check whether the pattern persists with similar stress.');
+    if (sleepConfounded) cautions.push('Sleep differs substantially between the groups, or the link weakens after nights with at least seven hours of sleep. Confidence is reduced because sleep may explain part of the pattern.');
+    if (restedRiskDifference === undefined) cautions.push('More recorded sleep is needed in both groups to check the pattern after similar nights. Missing sleep is never assumed to be normal.');
     if (!repeated) cautions.push('Exposure is concentrated in fewer than three separate runs of days. A change over time could explain the pattern.');
     if (window === 'same-day') cautions.push('Same-day analysis counts this feeling only when it was logged at or after the first recorded exposure that day. Recorded times may be approximate, and the diary cannot tell whether a feeling was new, continuing, or caused by the food.');
     else cautions.push('Next-day analysis compares consecutive calendar days, not a fixed number of hours. Foods eaten on the symptom day may also contribute.');
@@ -150,7 +162,10 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
       status: enough ? 'exploratory' : 'not-enough-data',
       headline: `${ingredientName} & ${symptom.name.toLowerCase()}`,
       summary: `${symptom.name} was logged on ${pct(exposedRate)} of days with ${ingredientName.toLowerCase()} and ${pct(unexposedRate)} of days without it${window === 'next-day' ? ', looking at the following day' : ''}.`,
-      cautions, coOccursWith, inferredFraction: 1 - confirmedExposedDays / exposed.length, confirmedExposedDays, lowStressRiskDifference,
+      cautions, coOccursWith, inferredFraction: 1 - confirmedExposedDays / exposed.length, confirmedExposedDays, lowStressRiskDifference, restedRiskDifference,
+      evidenceContext: symptom.kind === 'positive' ? 'This describes a positive feeling in your diary. It does not establish that a food improves health or is safe for an allergy.' : evidenceContext(ingredientId, ingredientName),
+      interpretationConfidence: ingredientId.startsWith('food:') ? 'whole-product' : ['not-common', 'unknown'].includes(getIngredientInfo(ingredientId, ingredientName).triggerLevel) ? 'limited' : 'context-supported',
+      contextSummary: 'Stress and sleep are checked as possible alternative explanations. Seven hours is a comparison threshold, not a personal sleep target. Notes remain available for you and your clinician; their wording does not silently change the calculations.',
     });
     details.set(id, { enough, repeated, confounded, confirmedDifference, completeRiskDifference, completeIntervalLower: completeInterval[0], confirmedCompleteExposedDays });
   }

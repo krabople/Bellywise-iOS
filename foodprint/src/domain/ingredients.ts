@@ -1,4 +1,5 @@
 import taxonomy from '../data/openFoodFactsIngredients.json';
+import { isPackagingText } from './ingredientTextPolicy';
 import type { Confidence, IngredientExposure } from './types';
 
 export interface IngredientRecord {
@@ -36,7 +37,13 @@ const CORE_ROWS: [string, string, string[]?][] = [
   ['barley', 'Barley', ['barley malt', 'malt extract']], ['rye', 'Rye'], ['oats', 'Oats', ['oat', 'oat flour']],
   ['rice', 'Rice', ['rice flour', 'brown rice']], ['maize', 'Maize / corn', ['maize', 'corn', 'cornflour', 'corn starch', 'corn flour']],
   ['tapioca', 'Tapioca', ['tapioca starch']], ['potato', 'Potato', ['potatoes', 'potato starch']],
-  ['milk', 'Milk', ['dairy', 'whole milk', 'skimmed milk', 'semi skimmed milk', 'semi-skimmed milk', 'skim milk', 'lactose free milk', 'milk powder', 'whole milk powder', 'skimmed milk powder', 'skim milk powder', 'milk solids', 'whey', 'whey powder', 'casein', 'caseinate', 'buttermilk', 'cream', 'double cream', 'single cream', 'cheese', 'parmesan', 'mozzarella', 'butter', 'ghee']],
+  ['milk', 'Milk', ['dairy', 'whole milk', 'skimmed milk', 'semi skimmed milk', 'semi-skimmed milk', 'skim milk', 'milk powder', 'whole milk powder', 'skimmed milk powder', 'skim milk powder', 'milk solids', 'lactose free milk']],
+  ['butter', 'Butter', ['salted butter', 'unsalted butter']], ['ghee', 'Ghee', ['clarified butter']],
+  ['cheese', 'Cheese'], ['hard-cheese', 'Hard / aged cheese', ['cheddar', 'parmesan', 'aged cheese', 'hard cheese']],
+  ['cream-cheese', 'Cream cheese', ['soft cheese', 'ricotta', 'cottage cheese']], ['mozzarella', 'Mozzarella'],
+  ['yoghurt', 'Yoghurt', ['yogurt', 'greek yoghurt', 'greek yogurt', 'natural yoghurt']],
+  ['cream', 'Cream', ['single cream', 'double cream']], ['buttermilk', 'Buttermilk'],
+  ['whey', 'Whey', ['whey powder']], ['casein', 'Casein', ['caseinate']],
   ['lactose', 'Lactose', ['milk sugar']], ['egg', 'Egg', ['eggs', 'egg white', 'egg yolk']],
   ['soy', 'Soy', ['soya', 'soybean', 'soya flour', 'soy flour', 'tofu', 'tempeh', 'edamame']],
   ['peanut', 'Peanut', ['peanuts', 'groundnut', 'peanut butter']], ['almond', 'Almond', ['almonds', 'almond butter']],
@@ -65,8 +72,9 @@ const CORE_ROWS: [string, string, string[]?][] = [
   ['alcohol', 'Alcohol', ['ethanol']], ['sorbitol', 'Sorbitol', ['e420']], ['mannitol', 'Mannitol', ['e421']],
   ['xylitol', 'Xylitol', ['e967']], ['erythritol', 'Erythritol', ['e968']], ['inulin', 'Inulin', ['chicory root fibre', 'chicory root fiber']],
   ['yeast', 'Yeast'], ['salt', 'Salt'], ['vinegar', 'Vinegar'], ['chilli', 'Chilli', ['chili', 'chilli pepper']],
+  ['gelatine', 'Gelatine', ['gelatin', 'beef gelatine', 'pork gelatine', 'bovine gelatine', 'porcine gelatine']],
   ['ginger', 'Ginger'], ['cumin', 'Cumin'], ['coriander', 'Coriander', ['cilantro']], ['basil', 'Basil'], ['oregano', 'Oregano'],
-  ['quinoa', 'Quinoa'], ['buckwheat', 'Buckwheat'], ['water', 'Water'],
+  ['quinoa', 'Quinoa'], ['buckwheat', 'Buckwheat'], ['water', 'Water', ['plain water', 'tap water', 'still water', 'mineral water', 'spring water', 'bottled water', 'filtered water', 'purified water', 'drinking water']],
   ['niacin', 'Niacin (vitamin B3)', ['niacin', 'vitamin b3', 'b3', 'nicotinic acid', 'nicotinamide', 'niacinamide']],
   ['thiamin', 'Thiamin (vitamin B1)', ['thiamin', 'thiamine', 'vitamin b1', 'b1', 'thiamine mononitrate']],
   ['riboflavin', 'Riboflavin (vitamin B2)', ['riboflavin', 'vitamin b2', 'b2']],
@@ -87,7 +95,8 @@ const aliasOwner = new Map<string, IngredientRecord>();
 for (const record of core) for (const alias of record.aliases) aliasOwner.set(alias, record);
 const combined: IngredientRecord[] = [...core];
 for (const raw of taxonomy.records as IngredientRecord[]) {
-  const aliases = [...new Set([raw.name, ...raw.aliases].map(normalizeIngredientText).filter(Boolean))];
+  if (isPackagingText(raw.name)) continue;
+  const aliases = [...new Set([raw.name, ...raw.aliases].filter(alias => !isPackagingText(alias)).map(normalizeIngredientText).filter(Boolean))];
   const owner = aliases.map(alias => aliasOwner.get(alias)).find(Boolean);
   if (owner) {
     owner.aliases = [...new Set([...owner.aliases, ...aliases])];
@@ -160,7 +169,7 @@ export function findIngredientRecord(value: string, custom: IngredientRecord[] =
   const normalized = normalizeIngredientText(value);
   if (!normalized || exclusions.test(normalized)) return undefined;
   const clean = stripQualifiers(value.replace(/\([^)]*\)/g, '')).replace(/^gluten\s+free\s+/, '');
-  const candidates = [clean, ...inflectionCandidates(clean)];
+  const candidates = [clean, ...inflectionCandidates(clean), normalized];
   const customMatch = custom.find(record => [record.name, ...record.aliases].some(alias => candidates.includes(normalizeIngredientText(alias))));
   const match = customMatch ?? candidates.map(candidate => aliasOwner.get(candidate)).find(Boolean) ?? byId.get(clean) ?? byId.get(normalized.replace(/^en /, ''));
   return match && !customMatch ? canonicalFamily(match) : match;
@@ -172,7 +181,7 @@ export function findIngredientRecord(value: string, custom: IngredientRecord[] =
  */
 export function matchIngredientPhrases(value: string, custom: IngredientRecord[] = []): IngredientRecord[] {
   const normalized = normalizeIngredientText(value);
-  if (!normalized || exclusions.test(normalized) || /\b(?:may contain|allergy advice|allergen information|free from|does not contain)\b/.test(normalized)) return [];
+  if (!normalized || isPackagingText(value) || exclusions.test(normalized) || /\b(?:may contain|allergy advice|allergen information|free from|does not contain)\b/.test(normalized)) return [];
   const exact = findIngredientRecord(value, custom);
   if (exact) return [exact];
   const words = stripQualifiers(value).split(' ').filter(Boolean);
@@ -229,17 +238,22 @@ export function suggestIngredientRecords(value: string, limit = 5, custom: Ingre
 export function ingredientFromText(text: string, confidence: Confidence = 'confirmed', custom: IngredientRecord[] = []): IngredientExposure {
   const known = findIngredientRecord(text, custom);
   const clean = normalizeIngredientText(text);
-  return known ? { id: known.id, name: known.name, confidence } : {
+  const excludedComponents = [/\bgluten[ -]free\b/i.test(text) ? 'gluten' : '', /\blactose[ -]free\b/i.test(text) ? 'lactose' : ''].filter(Boolean);
+  return known ? { id: known.id, name: known.name, confidence, ...(excludedComponents.length ? { excludedComponents } : {}) } : {
     id: `custom-${clean.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'ingredient'}`,
     name: text.trim(), confidence,
   };
 }
 
 export function ingredientsFromNames(names: string[], confidence: Confidence = 'confirmed', custom: IngredientRecord[] = []): IngredientExposure[] {
-  return [...new Map(names.map(name => name.trim()).filter(Boolean).map(name => {
+  const result = new Map<string, IngredientExposure>();
+  for (const name of names.map(name => name.trim()).filter(name => Boolean(name) && !isPackagingText(name))) {
     const ingredient = ingredientFromText(name, confidence, custom);
-    return [ingredient.id, ingredient] as const;
-  })).values()];
+    const previous = result.get(ingredient.id);
+    if (previous) ingredient.excludedComponents = (previous.excludedComponents ?? []).filter(id => ingredient.excludedComponents?.includes(id));
+    result.set(ingredient.id, ingredient);
+  }
+  return [...result.values()];
 }
 
 /**
@@ -247,7 +261,7 @@ export function ingredientsFromNames(names: string[], confidence: Confidence = '
  * as literal label ingredients. Gluten is present in wheat, barley and rye;
  * an explicit gluten-free entry never contains those source grains here.
  */
-export function expandIngredientExposuresForAnalysis(ingredients: IngredientExposure[]): IngredientExposure[] {
+export function expandIngredientExposuresForAnalysis(ingredients: IngredientExposure[], context = ''): IngredientExposure[] {
   const expanded = new Map<string, IngredientExposure>();
   const add = (ingredient: IngredientExposure) => {
     const previous = expanded.get(ingredient.id);
@@ -257,7 +271,12 @@ export function expandIngredientExposuresForAnalysis(ingredients: IngredientExpo
   };
   for (const ingredient of ingredients) {
     add(ingredient);
-    if (['wheat', 'barley', 'rye'].includes(ingredient.id)) add({ id: 'gluten', name: 'Gluten', confidence: ingredient.confidence });
+    const excluded = new Set(ingredient.excludedComponents ?? []);
+    if (/\bgluten[ -]free\b/i.test(context)) excluded.add('gluten');
+    if (/\blactose[ -]free\b/i.test(context) || ingredient.id === 'lactose-free-milk') excluded.add('lactose');
+    if (['wheat', 'barley', 'rye'].includes(ingredient.id) && !excluded.has('gluten')) add({ id: 'gluten', name: 'Gluten', confidence: ingredient.confidence, derivedFrom: ingredient.id });
+    if (['milk', 'yoghurt', 'cream', 'buttermilk', 'cream-cheese', 'mozzarella', 'whey'].includes(ingredient.id) && !excluded.has('lactose')) add({ id: 'lactose', name: 'Lactose', confidence: 'inferred', derivedFrom: ingredient.id });
+    if (['milk', 'butter', 'ghee', 'cheese', 'hard-cheese', 'cream-cheese', 'mozzarella', 'yoghurt', 'cream', 'buttermilk', 'whey', 'casein', 'lactose-free-milk'].includes(ingredient.id)) add({ id: 'milk-protein', name: 'Milk / dairy protein', confidence: 'inferred', derivedFrom: ingredient.id });
   }
   return [...expanded.values()];
 }
@@ -270,6 +289,7 @@ const ALLERGY_SOURCE = { sourceTitle: 'NHS: Food allergy symptoms', sourceUrl: '
 const FODMAP_SYMPTOMS = ['Bloating', 'Wind', 'Abdominal pain or cramps', 'Diarrhoea or constipation'];
 
 const PROFILE: Record<string, IngredientProfile> = {
+  butter: { whatItIs: 'Butter is the fat-rich food made by churning cream. It is kept separate from milk in your journal.', whereFound: 'Spreads, pastry, cakes, sauces and cooked dishes.', triggerLevel: 'possible', triggerSummary: 'Contains milk proteins, but usually much less lactose than milk.', commonSymptoms: ['Allergic symptoms in people with milk allergy', 'Digestive symptoms depending on portion and individual tolerance'], symptomContext: 'Butter is not automatically treated as a meaningful lactose exposure. A butter pattern does not identify lactose as the cause. Dairy-free spreads and nut butters are different products.', sourceTitle: 'NHS: Lactose intolerance', sourceUrl: 'https://www.nhs.uk/conditions/lactose-intolerance/' },
   gluten: { whatItIs: 'Gluten is a group of proteins found in wheat, barley and rye.', whereFound: 'Foods containing wheat, barley or rye, including most bread, pasta, cakes, many cereals, some sauces and most beer.', triggerLevel: 'recognised', triggerSummary: 'A medically recognised trigger in coeliac disease and a reported trigger in non-coeliac gluten sensitivity.', commonSymptoms: ['Diarrhoea or constipation', 'Abdominal pain', 'Bloating and wind', 'Indigestion', 'Tiredness'], symptomContext: 'Coeliac disease is an autoimmune condition, not a food intolerance or allergy. Wheat can also cause symptoms through wheat allergy or fermentable fructans, so a diary link with gluten cannot identify the mechanism. Ask a clinician about coeliac testing before removing gluten, because testing is less reliable after starting a gluten-free diet.', sourceTitle: 'NHS: Coeliac disease', sourceUrl: 'https://www.nhs.uk/conditions/coeliac-disease/' },
   lactose: { whatItIs: 'Lactose is the natural sugar in milk and dairy foods.', whereFound: 'Milk, yoghurt, soft cheese, cream and foods made with milk.', triggerLevel: 'recognised', triggerSummary: 'A well-established digestive trigger in people who make too little lactase.', commonSymptoms: ['Bloating', 'Wind', 'Abdominal pain or rumbling', 'Diarrhoea or constipation', 'Nausea'], symptomContext: 'Undigested lactose can reach the colon, draw in fluid and ferment. Symptoms depend on the amount eaten and the person’s remaining lactase activity; many people tolerate some lactose.', sourceTitle: 'NHS: Lactose intolerance', sourceUrl: 'https://www.nhs.uk/conditions/lactose-intolerance/' },
   milk: { whatItIs: 'Milk contains lactose sugar and milk proteins. These can be involved in different kinds of reaction.', whereFound: 'Milk, yoghurt, cream, soft cheese, butter and many processed foods.', triggerLevel: 'recognised', triggerSummary: 'A well-known symptom trigger for some people, with lactose intolerance and milk allergy being different conditions.', commonSymptoms: ['Bloating, wind or abdominal pain', 'Diarrhoea or nausea', 'Itching, hives or swelling in allergy', 'Cough or wheeze in allergy'], symptomContext: 'Lactose intolerance mainly causes digestive symptoms and often depends on dose. Milk-protein allergy can affect the skin or breathing and may be serious. A diary cannot tell these mechanisms apart.', sourceTitle: 'NHS: Lactose intolerance and milk allergy', sourceUrl: 'https://www.nhs.uk/conditions/lactose-intolerance/' },
@@ -354,7 +374,8 @@ function inferredProfile(id: string, record?: IngredientRecord): IngredientProfi
 
 export function getIngredientInfo(id: string, fallbackName?: string): IngredientInfo {
   const record = byId.get(id) ?? ingredientCatalog.find(item => item.name === fallbackName);
-  const profile = PROFILE[id] ?? inferredProfile(id, record);
+  const dairyProfiles = ['milk-protein', 'cheese', 'hard-cheese', 'cream-cheese', 'mozzarella', 'yoghurt', 'cream', 'buttermilk', 'whey', 'casein'];
+  const profile = PROFILE[id] ?? (dairyProfiles.includes(id) ? { ...PROFILE.milk, whatItIs: `${record?.name ?? fallbackName ?? 'Milk protein'} is a dairy ingredient or component.`, symptomContext: 'Milk proteins can matter in milk allergy. Lactose content varies with processing and portion: hard aged cheese contains much less than milk; yoghurt may be better tolerated. Casein is a protein, not lactose. A diary cannot identify the mechanism of a reaction.', sourceTitle: 'NIDDK: Lactose intolerance and food choices', sourceUrl: 'https://www.niddk.nih.gov/health-information/digestive-diseases/lactose-intolerance/eating-diet-nutrition' } : inferredProfile(id, record));
   const name = record?.name ?? fallbackName ?? id;
   return {
     id, name, aliases: record?.aliases ?? [],

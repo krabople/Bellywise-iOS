@@ -15,7 +15,7 @@ test('isolates ingredients from marketing, nutrition, allergens and storage', ()
 test('keeps nested subingredients and embedded allergen declarations intact', () => {
   assert.deepEqual(splitIngredientList('Pasta (durum wheat semolina, egg), sauce [tomato, cheese (contains milk)], salt'), ['Pasta (durum wheat semolina, egg)', 'sauce [tomato, cheese (contains milk)]', 'salt']);
   const result = parseIngredientLabel('Ingredients: sauce (tomato, whey (contains milk)), rice. Storage: refrigerate');
-  assert.deepEqual(result.ingredients, ['sauce', 'Tomato', 'Milk', 'Rice']);
+  assert.deepEqual(result.ingredients, ['sauce', 'Tomato', 'Whey', 'Milk', 'Rice']);
   assert.deepEqual(result.allergens, []);
 });
 

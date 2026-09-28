@@ -1,3 +1,4 @@
+import { ingredientPrefix, isPackagingText } from '../domain/ingredientTextPolicy';
 /** A deliberately conservative English-label parser. Every result needs human review. */
 import { matchIngredientPhrases, type IngredientRecord } from '../domain/ingredients';
 
@@ -24,7 +25,7 @@ export interface IngredientLabelOptions {
 }
 
 const HEADER = /\bingredients\s*[:：]\s*|(?:^|\n)\s*ingredients\s*\n/i;
-const SECTION = /\b(?:may\s+contain(?:\s+traces\s+of)?|contains?|allerg(?:en|y)(?:s|\s+(?:advice|information|statement))?|for\s+allergens|nutrition(?:al)?(?:\s+(?:facts|information|values|declaration))?|typical\s+values|storage(?:\s+instructions)?|store\s+in|keep\s+(?:refrigerated|frozen)|best\s+before|use\s+by|directions(?:\s+for\s+use)?|cooking\s+instructions|preparation\s+instructions|recycling|distributed\s+by|manufactured\s+(?:by|for)|country\s+of\s+origin|net\s+(?:weight|contents)|serving\s+suggestion|ingredients\s*[:：])\b\s*[:：]?/gi;
+const SECTION = /\b(?:may\s+contain(?:\s+traces\s+of)?|contains?|allerg(?:en|y)(?:s|\s+(?:advice|information|statement))?|for\s+allergens|nutrition(?:al)?(?:\s+(?:facts|information|values|declaration))?|typical\s+values|storage(?:\s+instructions)?|store\s+in|keep\s+(?:refrigerated|frozen)|best\s+before|use\s+by|directions(?:\s+for\s+use)?|cooking\s+instructions|preparation\s+instructions|recycling|distributed\s+by|manufactured\s+(?:by|for)|country\s+of\s+origin|made\s+in|e[- ]?mail|contact\s+us|website|net\s+(?:weight|contents)|serving\s+suggestion|ingredients\s*[:：])\b\s*[:：]?/gi;
 
 function normalizeText(text: string): string {
   return text.replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
@@ -170,18 +171,25 @@ export function parseIngredientLabel(text: string, options: IngredientLabelOptio
   const body = header ? normalized.slice(header.index + header[0].length) : normalized;
   const sections = findSections(body);
   result.ingredientText = body.slice(0, sections[0]?.start ?? body.length).split('\n').map(cleanToken).filter(Boolean).join('\n');
-  const rawCandidates = splitIngredientList(result.ingredientText.replace(/\n+/g, ','));
+  const rawCandidates = splitIngredientList(result.ingredientText.replace(/\n+/g, ',')).map(ingredientPrefix).filter(token => token && !isPackagingText(token));
   const custom = options.customIngredients ?? [];
   if (!header && (!options.source || options.source === 'ocr')) {
     // Prefer one dense label-like line. This prevents a product name or a stray
     // marketing word elsewhere on the packet from being promoted independently.
     const lineMatches = result.ingredientText.split(/\n+/).map(line => {
-      const candidates = splitIngredientList(line);
-      const matched = candidates.flatMap(candidate => matchIngredientPhrases(candidate, custom));
+      const candidates = splitIngredientList(ingredientPrefix(line)).filter(token => !isPackagingText(token));
+      const matched = candidates.flatMap(candidate => expandIngredientNames([candidate]).flatMap(item => matchIngredientPhrases(item, custom)));
       return { candidates, matched };
-    }).filter(line => line.matched.length >= 2)
-      .sort((a, b) => b.matched.length - a.matched.length || (b.matched.length / b.candidates.length) - (a.matched.length / a.candidates.length));
-    const best = lineMatches[0];
+    });
+    const runs: typeof lineMatches = [];
+    for (const line of lineMatches) {
+      if (!line.matched.length) { runs.push({ candidates: [], matched: [] }); continue; }
+      if (!runs.length) runs.push({ candidates: [], matched: [] });
+      if (!runs[runs.length - 1].matched.length && line.matched.length < 2) continue;
+      runs[runs.length - 1].candidates.push(...line.candidates);
+      runs[runs.length - 1].matched.push(...line.matched);
+    }
+    const best = runs.filter(run => run.matched.length >= 2).sort((a, b) => b.matched.length - a.matched.length)[0];
     result.ingredients = best ? [...new Map(best.matched.map(record => [record.id, record.name])).values()] : [];
     result.unrecognized = best ? best.candidates.filter(candidate => matchIngredientPhrases(candidate, custom).length === 0) : [];
     if (result.ingredients.length < 2) {
@@ -197,7 +205,7 @@ export function parseIngredientLabel(text: string, options: IngredientLabelOptio
     for (const candidate of rawCandidates) {
       const expanded = expandIngredientNames([candidate]);
       const matches = expanded.flatMap(item => matchIngredientPhrases(item, custom));
-      if (matches.length) recognized.push(...matches.map(match => match.name));
+      if (matches.length) recognized.push(...matches.map(match => match.id === 'milk' && /\blactose[ -]free\s+milk\b/i.test(candidate) ? 'lactose-free milk' : match.name));
       else result.unrecognized.push(candidate);
     }
     result.ingredients = [...new Set(recognized)];

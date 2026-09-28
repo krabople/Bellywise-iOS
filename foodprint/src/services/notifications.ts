@@ -51,13 +51,31 @@ export async function replaceLocalReminders(previousIds: (string | undefined)[],
   return ids;
 }
 
-export async function notifyNewPatterns(patterns: { ingredientName: string; symptomName: string }[]): Promise<void> {
+export async function notifyNewPatterns(patterns: { id?: string; ingredientName: string; symptomName: string }[]): Promise<void> {
   if (Platform.OS === 'web' || patterns.length === 0) return;
   const body = patterns.length === 1
     ? `${patterns[0].ingredientName} and ${patterns[0].symptomName.toLowerCase()} are now worth a closer look in your diary.`
     : `${patterns.length} diary comparisons are now worth a closer look.`;
   await Notifications.scheduleNotificationAsync({
-    content: { title: 'Bellywise noticed a new pattern', body, sound: 'default', data: { kind: 'new-pattern' } },
+    content: { title: 'Bellywise noticed a new pattern', body, sound: 'default', data: { kind: 'new-pattern', patternId: patterns.length === 1 ? patterns[0].id : undefined } },
     trigger: null,
   });
+}
+
+/** Register only after diary loading so a cold-start tap cannot be overwritten by onboarding. */
+export function listenForLocalNotificationTaps(onTap: (data: Record<string, unknown>) => void): () => void {
+  if (Platform.OS === 'web') return () => {};
+  let active = true;
+  const handled = new Set<string>();
+  const handle = (response: Notifications.NotificationResponse | null) => {
+    if (!active || !response || response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
+    const id = response.notification.request.identifier + ':' + response.notification.date;
+    if (handled.has(id)) return;
+    handled.add(id);
+    onTap(response.notification.request.content.data ?? {});
+    void Notifications.clearLastNotificationResponseAsync().catch(() => {});
+  };
+  const listener = Notifications.addNotificationResponseReceivedListener(handle);
+  void Notifications.getLastNotificationResponseAsync().then(handle).catch(() => {});
+  return () => { active = false; listener.remove(); };
 }

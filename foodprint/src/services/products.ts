@@ -1,3 +1,5 @@
+import { isPackagingText, ingredientPrefix } from '../domain/ingredientTextPolicy';
+import { matchIngredientPhrases } from '../domain/ingredients';
 /** Public product records only. Diary entries, symptoms and photographs never enter this API. */
 export interface CatalogProduct {
   barcode: string;
@@ -46,15 +48,17 @@ function tagList(value: unknown): string[] {
 
 function structuredIngredientList(value: unknown): { id: string; name: string }[] {
   const rows: { id: string; name: string }[] = [];
-  const visit = (node: unknown) => {
+  const visit = (node: unknown, depth = 0) => {
+    if (depth > 8 || rows.length >= 500) return;
     if (!node || typeof node !== 'object' || Array.isArray(node)) return;
     const item = node as Record<string, unknown>;
     const rawId = stringField(item.id)?.replace(/^[a-z]{2}:/, '').replace(/-/g, ' ');
-    const name = stringField(item.text) ?? rawId;
-    if (name) rows.push({ id: stringField(item.id) ?? name, name });
-    if (Array.isArray(item.ingredients)) item.ingredients.forEach(visit);
+    const originalName = stringField(item.text) ?? rawId;
+    const name = originalName ? ingredientPrefix(originalName) : undefined;
+    if (name && name.length <= 300 && !isPackagingText(name) && matchIngredientPhrases(name).length) rows.push({ id: stringField(item.id) ?? name, name });
+    if (Array.isArray(item.ingredients)) item.ingredients.slice(0, 500).forEach(child => visit(child, depth + 1));
   };
-  if (Array.isArray(value)) value.forEach(visit);
+  if (Array.isArray(value)) value.slice(0, 500).forEach(node => visit(node));
   const seen = new Set<string>();
   return rows.filter(item => {
     const key = `${item.id.toLowerCase()}|${item.name.toLowerCase()}`;
@@ -71,7 +75,7 @@ export function normalizeCatalogProduct(value: unknown): CatalogProduct | null {
   const barcode = typeof product.code === 'number' ? String(product.code) : stringField(product.code);
   if (!barcode || !/^\d{4,24}$/.test(barcode)) return null;
   const ingredientsText = stringField(product.ingredients_text_en) ?? stringField(product.ingredients_text);
-  const warnings = ['Community product records may be incomplete or out of date. Check your exact product and its current packet.'];
+  const warnings = ['Community product records may be incomplete or out of date. Check your exact product and its current packet. Packaging text and unrecognised phrases are left out; add any missing genuine ingredients.'];
   if (!ingredientsText) warnings.push('This record has no ingredient list. Scan the packet or enter its ingredients yourself.');
   if (!product.ingredients_text_en && product.ingredients_text) warnings.push('The ingredient text may be in the product’s local language. English ingredient matching can miss terms.');
   return {
@@ -112,7 +116,7 @@ async function cachedRequest(key: string, kind: 'barcode' | 'search', load: () =
   if (Date.now() < nextRequestAt[kind]) {
     throw new CatalogError('rate-limited', 'Please wait a few seconds before another product search.');
   }
-  // OFF documents per-IP rate limits. Submit only; no automatic keystroke requests.
+  // OFF documents per-IP limits; automatic suggestions are debounced and wait for this budget.
   nextRequestAt[kind] = Date.now() + (kind === 'search' ? 6500 : 4500);
   const request = load().then(value => {
     if (cache.size >= 50) cache.delete(cache.keys().next().value!);
@@ -149,3 +153,5 @@ export async function searchProducts(query: string): Promise<CatalogProduct[]> {
     return body.products.map(normalizeCatalogProduct).filter((product): product is CatalogProduct => product !== null);
   });
 }
+
+export const productSearchDelay = () => Math.max(0, nextRequestAt.search - Date.now());

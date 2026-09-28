@@ -6,6 +6,8 @@ export interface IngredientExposure {
   id: string;
   name: string;
   confidence: Confidence;
+  excludedComponents?: string[];
+  derivedFrom?: string;
 }
 
 export interface CustomIngredientDefinition {
@@ -41,6 +43,10 @@ export interface Meal {
   /** Original reviewed label text retained for audit and later ingredient correction. */
   labelText?: string;
   notes?: string;
+  groupId?: string;
+  groupName?: string;
+  productCode?: string;
+  excludedComponents?: string[];
 }
 
 export interface SymptomDefinition {
@@ -126,6 +132,11 @@ export interface PatternResult {
   inferredFraction: number;
   confirmedExposedDays: number;
   lowStressRiskDifference?: number;
+  restedRiskDifference?: number;
+  contextSummary?: string;
+  evidenceContext?: string;
+  interpretationConfidence?: 'limited' | 'context-supported' | 'whole-product';
+  linkedIngredients?: { id: string; name: string; explanation: string }[];
 }
 
 export interface AnalysisResult {

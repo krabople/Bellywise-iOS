@@ -1,12 +1,13 @@
 import { Confidence, FoodResolution, IngredientExposure } from './types';
+import { extraRecipes, editDistance } from './extraRecipes';
 
 import { findIngredientRecord, ingredientCatalog, ingredientFromText, ingredientsFromNames, normalizeIngredientText } from './ingredients';
 export { ingredientCatalog, ingredientFromText, ingredientsFromNames } from './ingredients';
 
-const normalize = normalizeIngredientText;
+const normalize = (value: string) => normalizeIngredientText(value.replace(/&/g, ' and '));
 
 /** Recipes are editable hypotheses, not brand-specific ingredient lists. */
-const RECIPES: { names: string[]; ingredients: string[]; question?: 'grain' | 'milk' | 'cola' | 'cheese' }[] = [
+const RECIPES: { names: string[]; ingredients: string[]; question?: 'grain' | 'milk' | 'cola' | 'cheese' }[] = [...extraRecipes,
   { names: ['bread', 'white bread', 'brown bread', 'wholemeal bread', 'toast', 'baguette', 'sourdough', 'pitta', 'pita', 'bagel', 'bread roll'], ingredients: ['wheat', 'yeast', 'salt'], question: 'grain' },
   { names: ['gluten free bread', 'gluten free toast', 'gluten free bagel'], ingredients: ['rice', 'maize', 'tapioca', 'yeast', 'salt'] },
   { names: ['pasta', 'spaghetti', 'penne', 'macaroni', 'fusilli', 'linguine'], ingredients: ['wheat'], question: 'grain' },
@@ -37,9 +38,9 @@ const RECIPES: { names: string[]; ingredients: string[]; question?: 'grain' | 'm
   { names: ['soy milk', 'soya milk', 'soya drink'], ingredients: ['soy'] },
   { names: ['coconut milk', 'coconut cream'], ingredients: ['coconut'] },
   { names: ['yoghurt', 'yogurt', 'greek yoghurt', 'greek yogurt'], ingredients: ['milk', 'lactose'], question: 'milk' },
-  { names: ['cheddar', 'parmesan', 'hard cheese', 'aged cheese'], ingredients: ['milk'] },
+  { names: ['cheddar', 'parmesan', 'hard cheese', 'aged cheese'], ingredients: ['hard-cheese'] },
   { names: ['mozzarella', 'feta', 'soft cheese', 'cream cheese', 'ricotta', 'cottage cheese'], ingredients: ['milk', 'lactose'] },
-  { names: ['cheese'], ingredients: ['milk', 'lactose'], question: 'cheese' },
+  { names: ['cheese'], ingredients: ['cheese', 'lactose'], question: 'cheese' },
   { names: ['ice cream', 'gelato', 'custard'], ingredients: ['milk', 'lactose', 'sugar'], question: 'milk' },
   { names: ['latte', 'cappuccino', 'flat white', 'coffee with milk'], ingredients: ['coffee', 'caffeine', 'milk', 'lactose'], question: 'milk' },
   { names: ['americano', 'espresso', 'black coffee', 'coffee', 'cold brew', 'iced coffee'], ingredients: ['coffee', 'caffeine'] },
@@ -111,13 +112,19 @@ const RECIPES: { names: string[]; ingredients: string[]; question?: 'grain' | 'm
 ];
 
 export const foodCatalogSize = RECIPES.reduce((count, item) => count + item.names.length, 0) + ingredientCatalog.length;
+
+export function suggestFoodNames(input: string): string[] {
+  const query = normalize(input); if (query.length < 3) return [];
+  return RECIPES.map(recipe => ({ name: recipe.names[0], score: Math.max(...recipe.names.map(alias => alias.startsWith(query) ? .98 : 1 - editDistance(query, alias) / Math.max(query.length, alias.length))) }))
+    .filter(item => item.score >= .55).sort((a, b) => b.score - a.score).slice(0, 4).map(item => item.name);
+}
 const grainOptions = [{ id: 'standard', label: 'Regular recipe' }, { id: 'gluten-free', label: 'Gluten-free' }];
 const milkOptions = [{ id: 'standard', label: 'Regular dairy' }, { id: 'lactose-free', label: 'Lactose-free dairy' }, { id: 'oat', label: 'Oat' }, { id: 'soy', label: 'Soy' }, { id: 'almond', label: 'Almond' }, { id: 'dairy-free', label: 'Other dairy-free' }];
 const cheeseOptions = [{ id: 'fresh-soft', label: 'Fresh / soft cheese' }, { id: 'hard-aged', label: 'Hard / aged cheese' }, { id: 'lactose-free', label: 'Lactose-free cheese' }];
 
 function makeIngredient(id: string, confidence: Confidence = 'inferred'): IngredientExposure {
   const known = ingredientCatalog.find(item => item.id === id) ?? findIngredientRecord(id);
-  return { id, name: known?.name ?? id, confidence };
+  return { id: known?.id ?? id, name: known?.name ?? id, confidence };
 }
 
 /** Resolve whole dish names before individual words, so peanut butter never becomes dairy. */
@@ -134,7 +141,10 @@ export function resolveFood(input: string, variant?: string): FoodResolution {
   const dairyFree = vegan || /\b(?:dairy|milk) free\b|\b(?:without|no) (?:milk|dairy)\b/.test(`${query} ${variantText}`) || /^(oat|soy|almond)$/.test(variantText);
   const stripped = query.replace(/\b(?:gluten free|lactose free|dairy free|milk free|vegan|decaf|decaffeinated|caffeine free|alcohol free|non alcoholic|sugar free|diet|zero sugar)\b/g, '').replace(/\b(?:without|no)\s+.*$/, '').replace(/\s+/g, ' ').trim();
   const exactRecipe = RECIPES.find(item => item.names.includes(query));
-  const recipe = exactRecipe ?? RECIPES.find(item => item.names.includes(stripped));
+  const close = !exactRecipe && !findIngredientRecord(stripped) && stripped.length >= 6
+    ? RECIPES.map(item => ({ item, distance: Math.min(...item.names.map(alias => editDistance(stripped, alias))) })).sort((a, b) => a.distance - b.distance) : [];
+  const fuzzy = close[0] && close[0].distance <= Math.min(2, Math.floor(stripped.length / 6)) && (!close[1] || close[1].distance > close[0].distance) ? close[0].item : undefined;
+  const recipe = exactRecipe ?? RECIPES.find(item => item.names.includes(stripped)) ?? fuzzy;
   const exactIngredient = findIngredientRecord(stripped);
   let ids = recipe ? [...recipe.ingredients] : exactIngredient ? [exactIngredient.id] : [];
   let matched = Boolean(recipe || exactIngredient);
@@ -156,7 +166,7 @@ export function resolveFood(input: string, variant?: string): FoodResolution {
     ids = ids.filter(id => !['wheat', 'barley', 'rye'].includes(id));
     if (hadWheat && recipe) ids.push('rice', 'maize');
   }
-  if (dairyFree) ids = ids.filter(id => !['milk', 'lactose'].includes(id));
+  if (dairyFree) ids = ids.filter(id => !['milk', 'lactose', 'butter', 'cream', 'cheese', 'cream-cheese', 'hard-cheese', 'yoghurt', 'mozzarella', 'ghee', 'whey', 'casein'].includes(id));
   if (lactoseFree) ids = ids.filter(id => id !== 'lactose');
   if (recipe?.question === 'cheese' && variantText === 'hard aged') ids = ids.filter(id => id !== 'lactose');
   if (decaf) ids = ids.filter(id => id !== 'caffeine');
@@ -179,12 +189,12 @@ export function resolveFood(input: string, variant?: string): FoodResolution {
   if (recipe?.question === 'milk' && !dairyFree && !lactoseFree && !variant) questions.push({ id: 'milk', prompt: 'Which milk or dairy was used?', options: milkOptions });
   if (recipe?.question === 'cola' && !sugarFree && !variant) questions.push({ id: 'cola', prompt: 'Which version did you drink?', options: [{ id: 'standard', label: 'Regular' }, { id: 'sugar-free', label: 'Diet / sugar-free' }] });
   if (recipe?.question === 'cheese' && !lactoseFree && !variant) questions.push({ id: 'cheese', prompt: 'Which kind of cheese was it?', options: cheeseOptions });
-  const ingredients = ids.map(id => compositeIngredients.get(id) ?? makeIngredient(id));
+  const ingredients: IngredientExposure[] = ids.map(id => ({ ...(compositeIngredients.get(id) ?? makeIngredient(id, exactIngredient && !recipe ? 'confirmed' : 'inferred')), excludedComponents: [glutenFree ? 'gluten' : '', lactoseFree ? 'lactose' : ''].filter(Boolean) }));
   if (!ingredients.length && name) ingredients.push(ingredientFromText(name, 'inferred'));
   return {
     name, ingredients, questions, matched,
     description: matched
-      ? 'Typical recipe only. Edit the ingredients and confirm what you actually ate; brands and recipes vary.'
+      ? `${fuzzy && !exactRecipe ? `Closest recipe: ${recipe!.names[0]}. ` : ''}Typical recipe only. Ingredients are estimates; edit anything that differs from what you ate.`
       : 'No complete recipe match. This entry stays uncertain until you add or confirm its ingredients.',
   };
 }

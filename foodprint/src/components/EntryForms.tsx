@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, Platform, Pressable, Switch, View } from 'react-native';
 import { Camera, Check, CheckCheck, FileText, Plus, Search, Trash2, X, Image as ImageIcon, ScanLine } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -6,12 +6,16 @@ import * as Haptics from 'expo-haptics';
 import { File } from 'expo-file-system';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { T, C, F, Row, Button, Field, Notice, Chip, Pill, Sheet, IconButton, Card } from './ui';
+import { PhotoRegion, type Region } from './PhotoRegion';
+import { selectRecognizedRegion } from '../services/ocrRegion';
+import type { IngredientOcrResult } from '../../modules/foodprint-vision';
+import { expandIngredientExposuresForAnalysis } from '../domain/ingredients';
 import { DateField } from './DateField';
-import { resolveFood, ingredientsFromNames, localDateKey, getIngredientInfo, findIngredientRecord, suggestIngredientRecords, normalizeIngredientText } from '../domain';
+import { resolveFood, suggestFoodNames, ingredientsFromNames, localDateKey, getIngredientInfo, findIngredientRecord, suggestIngredientRecords, normalizeIngredientText } from '../domain';
 import type { CustomIngredientDefinition, IngredientExposure, Level, Meal, SymptomDefinition, SymptomLog } from '../domain/types';
 import { expandIngredientNames, parseIngredientLabel } from '../services/labelParser';
 import { isIngredientOcrAvailable, recognizeIngredientImage } from '../services/ocr';
-import { lookupBarcode, searchProducts, type CatalogProduct } from '../services/products';
+import { lookupBarcode, searchProducts, productSearchDelay, type CatalogProduct } from '../services/products';
 
 export const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 11)}`;
 function defaultEntryDate(selectedDay?: string): Date {
@@ -42,7 +46,10 @@ export function MealForm({ initial, selectedDay, customIngredients = [], onAddCu
   const [query, setQuery] = useState('');
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [searched, setSearched] = useState(false);
-  const [confirmed, setConfirmed] = useState(!!initial);
+  const [groupName, setGroupName] = useState(initial?.groupName || 'Ungrouped');
+  const [productCode, setProductCode] = useState(initial?.productCode);
+  const [excludedComponents, setExcludedComponents] = useState<string[]>(initial?.excludedComponents || []);
+  const [photo, setPhoto] = useState<{ uri: string; width: number; height: number; recognition: IngredientOcrResult } | null>(null);
   const [deleteCheck, setDeleteCheck] = useState(false);
   const [barcode, setBarcode] = useState('');
   const [barcodeNeedsLabel, setBarcodeNeedsLabel] = useState(false);
@@ -52,11 +59,14 @@ export function MealForm({ initial, selectedDay, customIngredients = [], onAddCu
   const [ingredientSuggestions, setIngredientSuggestions] = useState<{ id: string; name: string }[]>([]);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const resolution = useMemo(() => resolveFood(name, variant || undefined), [name, variant]);
+  const foodSuggestions = useMemo(() => resolution.matched ? [] : suggestFoodNames(name), [name, resolution.matched]);
   const personalCatalog = useMemo(() => customIngredients.map(item => ({ ...item })), [customIngredients]);
   const currentOperation = useRef(0);
   const scanLock = useRef(false);
-  const resetReview = () => { setReview(false); setConfirmed(false); setError(''); setWarnings([]); setScannerOpen(false); setCatalogProduct(false); setBarcodeNeedsLabel(false); scanLock.current = false; };
-  const showTyped = () => { setIngredients(resolution.ingredients); setReview(true); setWarnings(resolution.matched ? [] : ['This food or drink is not in the offline recipe guide. Add its ingredients, or save the entry without ingredient assumptions.']); setSource('typed'); setConfirmed(false); };
+  useEffect(() => () => { ++currentOperation.current; }, []);
+  useEffect(() => () => { if (photo) { try { const file = new File(photo.uri); if (file.exists) file.delete(); } catch {} } }, [photo]);
+  const resetReview = () => { ++currentOperation.current; setBusy(false); setReview(false); setError(''); setWarnings([]); setScannerOpen(false); setCatalogProduct(false); setProductCode(undefined); setExcludedComponents([]); setBarcodeNeedsLabel(false); scanLock.current = false; };
+  const showTyped = () => { setIngredients(resolution.ingredients); setReview(true); setWarnings(resolution.matched ? [] : ['This food or drink is not in the offline recipe guide. Add its ingredients, or save the entry without ingredient assumptions.']); setSource('typed');  };
   const parseLabel = (text = label, confidence?: number, product?: CatalogProduct) => {
     const parsed = parseIngredientLabel(text, { source: product ? 'catalog' : 'ocr', ocrConfidence: confidence, customIngredients: personalCatalog });
     const allergens = [...new Set([...parsed.allergens, ...(product?.allergens ?? [])])];
@@ -67,22 +77,25 @@ export function MealForm({ initial, selectedDay, customIngredients = [], onAddCu
       else setError('No clear run of catalogue ingredients was found. Retake the photo closer to the list, or review and add the ingredients manually.');
       setReview(false); return;
     }
-    setError(''); setIngredients(ingredientsFromNames(expandIngredientNames(parsed.ingredients), 'inferred', personalCatalog)); setSource('label'); setReview(true); setConfirmed(false);
+    setError(''); setIngredients(ingredientsFromNames(expandIngredientNames(parsed.ingredients), 'confirmed', personalCatalog)); setSource('label'); setReview(true);
   };
   const scan = async (camera: boolean) => {
-    if (!isIngredientOcrAvailable()) { setError('Camera text recognition runs in the iPhone or iPad build. In this browser preview, paste a label below to try the ingredient parser.'); return; }
-    setBusy(true); setError(''); let imageUri: string | undefined;
+    if (!isIngredientOcrAvailable()) { setError('Camera text recognition runs in the iPhone or iPad build. In this browser preview, use manual ingredient entry or product search.'); return; }
+    const operation = ++currentOperation.current; setBusy(true); setError(''); let imageUri: string | undefined;
     try {
-      if (camera) { const permission = await ImagePicker.requestCameraPermissionsAsync(); if (!permission.granted) throw new Error('Camera access is off. You can enable it in Settings, choose a photo, or paste a label.'); }
-      const result = camera ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1, allowsEditing: true }) : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1, allowsEditing: true });
+      if (camera) { const permission = await ImagePicker.requestCameraPermissionsAsync(); if (!permission.granted) throw new Error('Camera access is off. You can enable it in Settings, choose a photo, or enter ingredients manually.'); }
+      const result = camera ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1, allowsEditing: false }) : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1, allowsEditing: true });
       if (result.canceled) return;
       imageUri = result.assets[0].uri;
       const recognition = await recognizeIngredientImage(imageUri);
+      if (operation !== currentOperation.current) return;
       setCatalogProduct(false);
-      setLabel(recognition.text); parseLabel(recognition.text, recognition.confidence);
-    } catch (e) { setError(e instanceof Error ? e.message : 'The label could not be read. Try better lighting or paste the text.'); }
+      setPhoto({ uri: imageUri, width: result.assets[0].width, height: result.assets[0].height, recognition }); imageUri = undefined;
+    } catch (e) { setError(e instanceof Error ? e.message : 'The label could not be read. Try better lighting or enter ingredients manually.'); }
     finally { if (imageUri) { try { const photo = new File(imageUri); if (photo.exists) photo.delete(); } catch { /* OS may already have removed the picker cache. */ } } setBusy(false); }
   };
+  const disposePhoto = () => { if (photo) { try { const file = new File(photo.uri); if (file.exists) file.delete(); } catch {} } setPhoto(null); };
+  const usePhotoRegion = (region: Region) => { if (!photo) return; const selected = selectRecognizedRegion(photo.recognition, region); setLabel(selected.text); parseLabel(selected.text, selected.confidence); disposePhoto(); };
   const search = async () => {
     const operation = ++currentOperation.current; setBusy(true); setError(''); setSearched(false);
     try {
@@ -92,16 +105,22 @@ export function MealForm({ initial, selectedDay, customIngredients = [], onAddCu
     } catch (e) { if (operation === currentOperation.current) setError(e instanceof Error ? e.message : 'Product search is unavailable.'); }
     finally { if (operation === currentOperation.current) setBusy(false); }
   };
+  useEffect(() => {
+    if (mode !== 'product' || query.trim().length < 3) { setProducts([]); return; }
+    ++currentOperation.current; setBusy(false); setSearched(false); setProducts([]);
+    const timer = setTimeout(() => { void search(); }, Math.max(800, productSearchDelay() + 50));
+    return () => { clearTimeout(timer); ++currentOperation.current; };
+  }, [query, mode]);
   const chooseProduct = (p: CatalogProduct) => {
-    setName(p.name); setNotes([p.brands, `Product data: ${p.sourceUrl}`, 'Open Food Facts · ODbL'].filter(Boolean).join('\n'));
+    setProductCode(p.barcode); setExcludedComponents(p.labels.filter(label => /^(?:gluten|lactose)[ -]free$/i.test(label)).map(label => label.split(/[ -]/)[0].toLowerCase())); setName(p.name); setNotes([p.brands, `Product data: ${p.sourceUrl}`, 'Open Food Facts · ODbL'].filter(Boolean).join('\n'));
     setLabel(p.ingredientsText || ''); setCatalogProduct(true); setBarcodeNeedsLabel(false); setProducts([]); setScannerOpen(false);
     if (p.ingredients.length) {
       setMode('scan');
       const allergens = [...new Set(p.allergens)];
       const traces = [...new Set(p.traces)];
-      setIngredients(ingredientsFromNames(p.ingredients.map(item => item.name), 'inferred', personalCatalog));
+      setIngredients(ingredientsFromNames(expandIngredientNames(p.ingredients.map(item => item.name)), 'confirmed', personalCatalog));
       setWarnings([...p.warnings, ...(allergens.length ? [`Allergen statement (separate from ingredients): ${allergens.join(', ')}.`] : []), ...(traces.length ? [`May contain: ${traces.join(', ')}. This is a trace warning, not confirmed consumption.`] : [])]);
-      setSource('label'); setReview(true); setConfirmed(false); setError('');
+      setSource('label'); setReview(true);  setError('');
     } else if (p.ingredientsText) { setMode('scan'); parseLabel(p.ingredientsText, undefined, p); }
     else { scanLock.current = false; setMode('barcode'); setCatalogProduct(false); setBarcodeNeedsLabel(true); setWarnings(p.warnings); setError(''); setReview(false); }
   };
@@ -132,7 +151,7 @@ export function MealForm({ initial, selectedDay, customIngredients = [], onAddCu
   };
   const onBarcodeScanned = (result: BarcodeScanningResult) => { void findBarcode(result.data, true); };
   const photographMissingBarcodeLabel = () => { setMode('scan'); setCatalogProduct(false); setBarcodeNeedsLabel(false); setError(''); void scan(true); };
-  const enterMissingBarcodeIngredients = () => { setMode('type'); setCatalogProduct(false); setBarcodeNeedsLabel(false); setIngredients([]); setSource('typed'); setReview(true); setConfirmed(false); setError(''); };
+  const enterMissingBarcodeIngredients = () => { setMode('type'); setCatalogProduct(false); setBarcodeNeedsLabel(false); setIngredients([]); setSource('typed'); setReview(true);  setError(''); };
   const addIngredientRecord = (record: { id: string; name: string }) => {
     setIngredients(items => [...items.filter(item => item.id !== record.id), { id: record.id, name: record.name, confidence: 'confirmed' }]);
     setNewIngredient(''); setPendingIngredient(''); setIngredientSuggestions([]); setError('');
@@ -155,18 +174,18 @@ export function MealForm({ initial, selectedDay, customIngredients = [], onAddCu
     catch { setError('The personal ingredient could not be saved.'); }
     finally { setBusy(false); }
   };
-  const save = async () => {
+  const save = async (keepAdding = false) => {
     setError('');
     if (!name.trim()) { setError('Give this food or drink a name.'); return; }
     if (!Number.isFinite(date.getTime()) || date.getTime() > Date.now()) { setError('Choose a valid time in the past.'); return; }
-    if (!review || !confirmed) { setError('Review the ingredients and confirm before saving.'); return; }
+    if (!review) { setError('Review the ingredients before saving.'); return; }
     setBusy(true);
-    try { await onSave({ id: initial?.id || uid(), name: name.trim(), kind, eatenAt: date.toISOString(), ingredients, source, notes: notes.trim(), labelText: source === 'label' ? label.trim() || undefined : undefined }); onClose(); }
+    try { await onSave({ id: initial?.id || uid(), name: name.trim(), kind, eatenAt: date.toISOString(), ingredients, source, groupName: groupName === 'Ungrouped' ? undefined : groupName, groupId: groupName === 'Ungrouped' ? undefined : `${localDateKey(date)}:${groupName}`, productCode, excludedComponents, notes: notes.trim(), labelText: source === 'label' ? label.trim() || undefined : undefined }); if (keepAdding) { setName(''); setIngredients([]); setLabel(''); setNotes(''); setBarcode(''); setMode('barcode'); setVariant(''); setQuery(''); resetReview(); } else onClose(); }
     catch (e) { setError(e instanceof Error ? e.message : 'Your entry could not be saved. Please try again.'); }
     finally { setBusy(false); }
   };
   return <Sheet title={initial ? `Edit ${kind}` : 'What did you eat or drink?'} subtitle="A little detail now makes your patterns more useful." onClose={onClose}>
-    <Row style={{ gap: 8 }}><Chip label="Food" selected={kind === 'food'} onPress={() => setKind('food')} /><Chip label="Drink" selected={kind === 'drink'} onPress={() => setKind('drink')} /></Row>
+    <T style={{ fontFamily: F.semi }}>Add to a meal</T><Row style={{ flexWrap: 'wrap', gap: 7 }}>{['Ungrouped', 'Breakfast', 'Lunch', 'Dinner', 'Snack'].map(group => <Chip key={group} label={group} selected={groupName === group} onPress={() => setGroupName(group)} />)}</Row><Row style={{ gap: 8 }}><Chip label="Food" selected={kind === 'food'} onPress={() => setKind('food')} /><Chip label="Drink" selected={kind === 'drink'} onPress={() => setKind('drink')} /></Row>
     {!initial && <Row style={{ flexWrap: 'wrap', gap: 8 }}>{(['barcode', 'type', 'scan', 'product'] as const).map(m => <Chip key={m} label={m === 'barcode' ? 'Scan barcode' : m === 'type' ? 'Log manually' : m === 'scan' ? 'Scan ingredients' : 'Search by name'} selected={mode === m} onPress={() => { setMode(m); resetReview(); }} />)}</Row>}
     {mode === 'barcode' && !review && <>
       <Notice>Scan the barcode on a packet. Bellywise retrieves that product’s published ingredient list from Open Food Facts, then separates compound ingredients for individual review and pattern checks. It never guesses ingredients from the product name.</Notice>
@@ -181,35 +200,36 @@ export function MealForm({ initial, selectedDay, customIngredients = [], onAddCu
       {barcodeNeedsLabel && <Card style={{ backgroundColor: '#FBEEE4' }}><T style={{ fontFamily: F.semi }}>The ingredients couldn’t be confirmed from this barcode.</T><T muted style={{ fontSize: 12 }}>Photograph the ingredients list on the packet, or enter the ingredients manually.</T><Button label="Photograph ingredients list" icon={Camera} onPress={photographMissingBarcodeLabel} /><Button label="Enter ingredients manually" icon={FileText} variant="secondary" onPress={enterMissingBarcodeIngredients} /></Card>}
       <Pressable accessibilityRole="link" onPress={() => Linking.openURL('https://world.openfoodfacts.org')}><T muted style={{ fontSize: 11 }}>Product data: Open Food Facts contributors · Open Database License (ODbL)</T></Pressable>
     </>}
-    {mode === 'product' && <><Notice>Search the Open Food Facts catalogue by product name. Only the search is sent to Open Food Facts; your diary stays on your device.</Notice><Field label="Product name" value={query} onChangeText={setQuery} placeholder="e.g. Alpro oat milk" returnKeyType="search" onSubmitEditing={search} /><Button label="Search products" icon={Search} onPress={search} busy={busy} disabled={query.trim().length < 2} />{products.map(p => <Pressable key={p.barcode} accessibilityRole="button" onPress={() => chooseProduct(p)} style={{ padding: 16, borderWidth: 1, borderColor: C.line, borderRadius: 14 }}><T style={{ fontFamily: F.semi }}>{p.name}</T><T muted style={{ fontSize: 12 }}>{p.brands || p.barcode} · {p.ingredientsText ? 'Ingredients available' : 'Label needed'}</T></Pressable>)}{searched && products.length === 0 && <T muted>No matching products. Try scanning its barcode or ingredient label.</T>}<Pressable accessibilityRole="link" onPress={() => Linking.openURL('https://world.openfoodfacts.org')}><T muted style={{ fontSize: 11 }}>Product data: Open Food Facts contributors · Open Database License (ODbL)</T></Pressable></>}
-    {mode !== 'product' && <>
+    {mode === 'product' && <><Notice>Type a brand or product name to see suggestions from Open Food Facts. Only the search is sent to Open Food Facts; your diary stays on your device.</Notice><Field label="Brand or product name" value={query} onChangeText={setQuery} placeholder="e.g. Dolmio, Alpro oat milk" returnKeyType="search" onSubmitEditing={search} /><Button label="Search products" icon={Search} onPress={search} busy={busy} disabled={query.trim().length < 2} />{products.map(p => <Pressable key={p.barcode} accessibilityRole="button" onPress={() => chooseProduct(p)} style={{ padding: 16, borderWidth: 1, borderColor: C.line, borderRadius: 14 }}><T style={{ fontFamily: F.semi }}>{p.name}</T><T muted style={{ fontSize: 12 }}>{p.brands || p.barcode} · {p.ingredientsText ? 'Ingredients available' : 'Label needed'}</T></Pressable>)}{searched && products.length === 0 && <T muted>No matching products. Try scanning its barcode or ingredient label.</T>}<Pressable accessibilityRole="link" onPress={() => Linking.openURL('https://world.openfoodfacts.org')}><T muted style={{ fontSize: 11 }}>Product data: Open Food Facts contributors · Open Database License (ODbL)</T></Pressable></>}
+    {(mode !== 'product' || review) && <>
       {(mode !== 'barcode' || review) && <Field label={kind === 'drink' ? 'Drink' : 'Food or meal'} value={name} onChangeText={v => { setName(v); if (mode === 'type') { setVariant(''); resetReview(); } }} placeholder={kind === 'drink' ? 'e.g. oat latte, beer, orange juice' : 'e.g. bread, spaghetti bolognese'} maxLength={300} />}
-      {mode === 'type' && !review && <>{resolution.questions.map(q => <View key={q.id} style={{ gap: 9 }}><T style={{ fontFamily: F.medium }}>{q.prompt}</T><Row style={{ flexWrap: 'wrap', gap: 8 }}>{q.options.map(o => <Chip key={o.id} label={o.label} selected={variant === o.id} onPress={() => setVariant(o.id)} />)}</Row></View>)}{name.length > 1 && <T muted style={{ fontSize: 12 }}>{resolution.description}</T>}<Button label="Review ingredients" icon={CheckCheck} disabled={!name.trim()} onPress={showTyped} /></>}
-      {mode === 'scan' && <>{!catalogProduct && <><Row><Button label="Take photo" icon={Camera} onPress={() => scan(true)} busy={busy} style={{ flex: 1 }} /><Button label="Choose photo" icon={ImageIcon} variant="secondary" onPress={() => scan(false)} disabled={busy} style={{ flex: 1 }} /></Row><T muted style={{ fontSize: 12 }}>Photograph the ingredient panel closely. A heading helps, but is no longer required: Bellywise matches whole phrases against its ingredient catalogue and respects “free from” and “may contain” context.</T></>}<Field label={catalogProduct ? 'Published ingredient label' : 'Label text'} value={label} editable={!catalogProduct} onChangeText={v => { setLabel(v); if (!catalogProduct) resetReview(); }} placeholder="Ingredients: wheat flour, water, yeast, salt…" multiline />{!catalogProduct && <Button label="Find ingredients in text" icon={ScanLine} variant="secondary" onPress={() => parseLabel()} disabled={!label.trim() || busy} />}{catalogProduct && <Notice>The ingredients below come from this product’s structured Open Food Facts record. The label text is shown for comparison; no “ingredients only” toggle is needed.</Notice>}</>}
+      {mode === 'type' && !review && <>{foodSuggestions.length > 0 && <View style={{ gap: 8 }}><T muted>Did you mean?</T><Row style={{ flexWrap: 'wrap' }}>{foodSuggestions.map(suggestion => <Chip key={suggestion} label={suggestion} onPress={() => { setName(suggestion); setVariant(''); }} />)}</Row></View>}{resolution.questions.map(q => <View key={q.id} style={{ gap: 9 }}><T style={{ fontFamily: F.medium }}>{q.prompt}</T><Row style={{ flexWrap: 'wrap', gap: 8 }}>{q.options.map(o => <Chip key={o.id} label={o.label} selected={variant === o.id} onPress={() => setVariant(o.id)} />)}</Row></View>)}{name.length > 1 && <T muted style={{ fontSize: 12 }}>{resolution.description}</T>}<Button label="Review ingredients" icon={CheckCheck} disabled={!name.trim()} onPress={showTyped} /></>}
+      {mode === 'scan' && !catalogProduct && <><Row><Button label="Take photo" icon={Camera} onPress={() => scan(true)} busy={busy} style={{ flex: 1 }} /><Button label="Choose photo" icon={ImageIcon} variant="secondary" onPress={() => scan(false)} disabled={busy} style={{ flex: 1 }} /></Row><T muted style={{ fontSize: 12 }}>After taking a photo, draw a box around just the ingredients list.</T></>}
       {warnings.map((w, i) => <Notice warm key={i}>{w}</Notice>)}
-      {review && <><Row style={{ justifyContent: 'space-between' }}><T style={{ fontFamily: F.semi }}>Review each ingredient</T><Pill label={`${ingredients.length} ingredients`} /></Row><T muted style={{ fontSize: 12 }}>Compound ingredients have been separated so Bellywise can check each one independently. Remove anything you didn’t consume. Confirm only after checking the current packet or recipe.</T>
+      {review && <><Row style={{ justifyContent: 'space-between' }}><T style={{ fontFamily: F.semi }}>Review each ingredient</T><Pill label={`${ingredients.length} ingredients`} /></Row><T muted style={{ fontSize: 12 }}>Ingredients from labels start confirmed. Recipe suggestions remain estimates until you confirm them individually. Remove anything you didn’t consume, or unconfirm an uncertain label item.</T>
         {ingredients.length === 0 && <Notice>No ingredients yet. You can add them below, or save this entry by name. Unknown ingredients cannot contribute to ingredient patterns.</Notice>}
-        <View style={{ gap: 4 }}>{ingredients.map((ingredient, i) => <Row key={`${ingredient.id}-${i}`} style={{ paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: C.line }}><Pressable accessibilityRole="button" accessibilityLabel={`About ${ingredient.name}`} onPress={() => setIngredientInfoId(ingredient.id)} style={{ flex: 1 }}><T style={{ fontSize: 13, color: C.green, textDecorationLine: 'underline' }}>{ingredient.name}</T><T muted style={{ fontSize: 10 }}>{ingredient.confidence === 'confirmed' ? 'Confirmed by you' : 'Suggested · not yet confirmed'} · Tap for details</T></Pressable><Pressable accessibilityRole="button" onPress={() => setIngredients(xs => xs.map((x, j) => j === i ? { ...x, confidence: x.confidence === 'confirmed' ? 'inferred' : 'confirmed' } : x))} style={{ padding: 9 }}><T style={{ fontSize: 11, color: C.green }}>{ingredient.confidence === 'confirmed' ? 'Unconfirm' : 'Confirm'}</T></Pressable><IconButton icon={X} label={`Remove ${ingredient.name}`} onPress={() => setIngredients(xs => xs.filter((_, j) => j !== i))} /></Row>)}</View>
-        {ingredientInfoId && (() => { const info = getIngredientInfo(ingredientInfoId, ingredients.find(item => item.id === ingredientInfoId)?.name); return <Card style={{ backgroundColor: C.pale }}><Row style={{ justifyContent: 'space-between' }}><T style={{ fontFamily: F.semi, fontSize: 16 }}>{info.name}</T><IconButton icon={X} label="Close ingredient details" onPress={() => setIngredientInfoId(null)} /></Row><T>{info.whatItIs}</T><T style={{ fontFamily: F.semi, marginTop: 8 }}>Where it is found</T><T>{info.whereFound}</T><T style={{ fontFamily: F.semi, marginTop: 8 }}>Symptoms and context</T><T style={{ fontFamily: F.semi }}>{info.triggerSummary}</T>{info.commonSymptoms.length > 0 && <T>Commonly reported: {info.commonSymptoms.join(' · ')}</T>}<T>{info.symptomContext}</T>{info.sourceUrl && <Pressable accessibilityRole="link" onPress={() => Linking.openURL(info.sourceUrl!)}><T style={{ color: C.green, textDecorationLine: 'underline', marginTop: 8 }}>{info.sourceTitle || 'Read source'}</T></Pressable>}</Card>; })()}
+        <View style={{ gap: 4 }}>{ingredients.map((ingredient, i) => <Row key={`${ingredient.id}-${i}`} style={{ paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: C.line }}><Pressable accessibilityRole="button" accessibilityLabel={`About ${ingredient.name}`} onPress={() => setIngredientInfoId(ingredient.id)} style={{ flex: 1 }}><T style={{ fontSize: 13, color: C.green, textDecorationLine: 'underline' }}>{ingredient.name}</T><T muted style={{ fontSize: 10 }}>{ingredient.confidence === 'confirmed' ? 'Confirmed ingredient' : 'Suggested · not yet confirmed'} · Tap for details</T></Pressable><Pressable accessibilityRole="button" onPress={() => setIngredients(xs => xs.map((x, j) => j === i ? { ...x, confidence: x.confidence === 'confirmed' ? 'inferred' : 'confirmed' } : x))} style={{ padding: 9 }}><T style={{ fontSize: 11, color: C.green }}>{ingredient.confidence === 'confirmed' ? 'Unconfirm' : 'Confirm'}</T></Pressable><IconButton icon={X} label={`Remove ${ingredient.name}`} onPress={() => setIngredients(xs => xs.filter((_, j) => j !== i))} /></Row>)}</View>
+        {ingredientInfoId && (() => { const info = getIngredientInfo(ingredientInfoId, ingredients.find(item => item.id === ingredientInfoId)?.name); return <Sheet title={info.name} onClose={() => setIngredientInfoId(null)}><T>{info.whatItIs}</T><T style={{ fontFamily: F.semi, marginTop: 8 }}>Where it is found</T><T>{info.whereFound}</T><T style={{ fontFamily: F.semi, marginTop: 8 }}>Symptoms and context</T><T style={{ fontFamily: F.semi }}>{info.triggerSummary}</T>{info.commonSymptoms.length > 0 && <T>Commonly reported: {info.commonSymptoms.join(' · ')}</T>}<T>{info.symptomContext}</T>{info.sourceUrl && <Pressable accessibilityRole="link" onPress={() => Linking.openURL(info.sourceUrl!)}><T style={{ color: C.green, textDecorationLine: 'underline', marginTop: 8 }}>{info.sourceTitle || 'Read source'}</T></Pressable>}</Sheet>; })()}
         <Row><View style={{ flex: 1 }}><Field value={newIngredient} onChangeText={value => { setNewIngredient(value); setPendingIngredient(''); setIngredientSuggestions([]); }} placeholder="Add an ingredient you know" maxLength={160} /></View><IconButton icon={Plus} label="Check and add ingredient" onPress={proposeIngredient} /></Row>
         {!!pendingIngredient && <Card style={{ backgroundColor: '#FBEEE4' }}><T style={{ fontFamily: F.semi }}>“{pendingIngredient}” was not found in the ingredient catalogue.</T>{ingredientSuggestions.length > 0 ? <><T muted style={{ fontSize: 12 }}>Did you mean one of these?</T><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{ingredientSuggestions.map(item => <Chip key={item.id} label={item.name} onPress={() => addIngredientRecord(item)} />)}</View></> : <T muted style={{ fontSize: 12 }}>No close catalogue matches were found.</T>}<Button label={`Add “${pendingIngredient}” anyway`} variant="secondary" onPress={() => void addPersonalIngredient()} busy={busy} /><T muted style={{ fontSize: 10 }}>This creates a personal catalogue ingredient on this device. Check spelling first; personal entries do not provide medical evidence.</T></Card>}
-        {source === 'label' && <Button label="Confirm all" variant="secondary" icon={CheckCheck} onPress={() => { setIngredients(xs => xs.map(x => ({ ...x, confidence: 'confirmed' }))); setConfirmed(true); }} />}
         <DateField value={date} onChange={setDate} label="Had at" /><Field label={kind === 'drink' ? 'Amount & notes (optional)' : 'Portion & notes (optional)'} value={notes} onChangeText={setNotes} placeholder={kind === 'drink' ? 'e.g. 250 ml, decaf; with oat milk or a mixer' : 'e.g. two slices, with butter; homemade'} multiline maxLength={10000} />
-        <Row><Switch accessibilityLabel="I have reviewed these ingredients" value={confirmed} onValueChange={setConfirmed} trackColor={{ true: C.green }} /><T style={{ flex: 1, fontSize: 12 }}>I’ve reviewed this entry. Unconfirmed suggestions will stay marked as estimates.</T></Row>
-        <Button label={initial ? 'Save changes' : 'Add to my journal'} icon={Check} onPress={save} busy={busy} disabled={!confirmed} />
+        <Button label={initial ? 'Save changes' : groupName === 'Ungrouped' ? 'Add to my journal' : `Save to ${groupName.toLowerCase()}`} icon={Check} onPress={() => void save()} busy={busy} />
+        {!initial && groupName !== 'Ungrouped' && <Button label={`Save & add another to ${groupName.toLowerCase()}`} variant="secondary" onPress={() => void save(true)} busy={busy} />}
+        {expandIngredientExposuresForAnalysis(ingredients, [name, ...excludedComponents.map(id => id + '-free')].join(' ')).filter(item => item.derivedFrom && !ingredients.some(i => i.id === item.id)).map(item => <Notice key={item.id}>Also checked in patterns: {item.name} (derived from {ingredients.find(i => i.id === item.derivedFrom)?.name}). This is a component estimate, not an extra word from the label.</Notice>)}
       </>}
     </>}
+    {photo && <PhotoRegion uri={photo.uri} width={photo.width} height={photo.height} onCancel={disposePhoto} onConfirm={usePhotoRegion} />}
     {!!error && <Notice warm>{error}</Notice>}
     {initial && onDelete && <><Button label={deleteCheck ? `Yes, delete this ${kind} entry` : `Delete ${kind} entry`} icon={Trash2} variant="danger" onPress={async () => { if (!deleteCheck) { setDeleteCheck(true); return; } try { await onDelete(); onClose(); } catch { setError('Could not delete the entry.'); } }} />{deleteCheck && <T muted style={{ fontSize: 12 }}>This removes the entry from your journal and recalculates patterns.</T>}</>}
   </Sheet>;
 }
 
-export function SymptomForm({ definitions, selectedIds, initial, selectedDay, onSave, onDelete, onClose, onManage }: { definitions: SymptomDefinition[]; selectedIds: string[]; initial?: SymptomLog; selectedDay?: string; onSave: (s: SymptomLog) => Promise<void>; onDelete?: () => Promise<void>; onClose: () => void; onManage: () => void }) {
-  const [kind, setKind] = useState<'negative' | 'positive'>(definitions.find(d => d.id === initial?.symptomId)?.kind || 'negative');
-  const [selected, setSelected] = useState(initial?.symptomId || '');
-  const [severity, setSeverity] = useState<Level>(initial?.severity || 2);
-  const [date, setDate] = useState(() => initial ? new Date(initial.occurredAt) : defaultEntryDate(selectedDay));
-  const [notes, setNotes] = useState(initial?.notes || '');
+export function SymptomForm({ definitions, selectedIds, initial, draft, selectedDay, onSave, onDelete, onClose, onManage }: { definitions: SymptomDefinition[]; selectedIds: string[]; initial?: SymptomLog; draft?: SymptomLog; selectedDay?: string; onSave: (s: SymptomLog) => Promise<void>; onDelete?: () => Promise<void>; onClose: () => void; onManage: (draft: SymptomLog) => void }) {
+  const [kind, setKind] = useState<'negative' | 'positive'>(definitions.find(d => d.id === (draft ?? initial)?.symptomId)?.kind || 'negative');
+  const [selected, setSelected] = useState((draft ?? initial)?.symptomId || '');
+  const [severity, setSeverity] = useState<Level>((draft ?? initial)?.severity || 2);
+  const [date, setDate] = useState(() => (draft ?? initial) ? new Date((draft ?? initial)!.occurredAt) : defaultEntryDate(selectedDay));
+  const [notes, setNotes] = useState((draft ?? initial)?.notes || '');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -226,7 +246,7 @@ export function SymptomForm({ definitions, selectedIds, initial, selectedDay, on
     <Row><Chip label="A symptom" selected={kind === 'negative'} onPress={() => { setKind('negative'); setSelected(''); }} /><Chip label="Something positive" selected={kind === 'positive'} onPress={() => { setKind('positive'); setSelected(''); }} /></Row>
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 9 }}>{shown.map(d => <Chip key={d.id} label={d.name} selected={selected === d.id} onPress={() => setSelected(d.id)} />)}</View>
     {shown.length === 0 && <T muted>You haven’t selected any {kind === 'positive' ? 'positive feelings' : 'symptoms'} to track yet.</T>}
-    <Button label="Choose symptoms or add your own" icon={Plus} variant="ghost" onPress={onManage} />
+    <Button label="Choose symptoms or add your own" icon={Plus} variant="ghost" onPress={() => onManage({ id: initial?.id || uid(), symptomId: selected, severity, occurredAt: date.toISOString(), notes })} />
     <T style={{ fontFamily: F.semi }}>{kind === 'positive' ? 'How noticeable was it?' : 'How intense was it?'}</T>
     <Row style={{ justifyContent: 'space-between' }}>{([1, 2, 3, 4, 5] as Level[]).map(v => <Pressable key={v} accessibilityRole="button" accessibilityLabel={`${v} of 5`} accessibilityState={{ selected: severity === v }} onPress={() => setSeverity(v)} style={{ width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center', backgroundColor: severity === v ? (kind === 'positive' ? C.green : C.orange) : C.bg, borderWidth: 1, borderColor: severity === v ? 'transparent' : C.line }}><T style={{ color: severity === v ? '#fff' : C.muted, fontFamily: F.semi }}>{v}</T></Pressable>)}</Row>
     <Row style={{ justifyContent: 'space-between', marginTop: -12 }}><T muted style={{ fontSize: 11 }}>Slight</T><T muted style={{ fontSize: 11 }}>Very strong</T></Row>
