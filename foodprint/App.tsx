@@ -3,7 +3,7 @@ import { FoodGroupHistory } from './src/components/FoodGroupHistory';
 import { groupPatternsForDisplay, mealExposures } from './src/domain/patternEvidence';
 import { notificationRoute } from './src/domain/notificationRoute';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, View, useWindowDimensions } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts, DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold } from '@expo-google-fonts/dm-sans';
 import { Lora_400Regular, Lora_500Medium } from '@expo-google-fonts/lora';
@@ -15,7 +15,7 @@ import { analyzePatterns, getDemoData, BUILT_IN_SYMPTOMS, localDateKey, foodCata
 import type { AppData, DayCheckIn, Level, Meal, NotificationPreferences, PatternResult, SymptomDefinition, SymptomLog } from './src/domain/types';
 import { LEARN_ARTICLES, SAFETY_NOTICES, type LearnArticle } from './src/content';
 import { emptyDiary, parseDiary, type SavedDiary } from './src/storage/schema';
-import { loadDiary, saveDiary } from './src/storage/persistence';
+import { loadDiary, saveDiary, startFreshDiary } from './src/storage/persistence';
 import { exportFile, importFile } from './src/services/files';
 import { configureLocalNotifications, listenForLocalNotificationTaps, notifyNewPatterns, replaceLocalReminders, requestLocalNotificationPermission } from './src/services/notifications';
 
@@ -133,7 +133,10 @@ function Bellywise() {
   const trackedDays = new Set(data.meals.map(m => localDateKey(new Date(m.eatenAt)))).size;
   const weeklyValues = Array.from({ length: 7 }, (_, i) => data.symptoms.filter(s => localDateKey(new Date(s.occurredAt)) === moveDay(selectedDay, i - 6) && definitions.find(d => d.id === s.symptomId)?.kind === 'negative').reduce((max, s) => Math.max(max, s.severity), 0));
 
-  if (!saved) return <View style={{ flex: 1, backgroundColor: C.bg, justifyContent: 'center', padding: 30, alignItems: 'center', gap: 20 }}><Leaf size={38} color={C.green} /><Heading>Bellywise</Heading>{loadError ? <><Notice warm>{loadError} Your saved data has not been replaced.</Notice><Button label="Try opening again" onPress={() => { setLoadError(''); loadDiary().then(v => { savedRef.current = v; setSaved(v); }).catch(e => setLoadError(e.message)); }} /></> : <ActivityIndicator color={C.green} />}</View>;
+  if (!saved) {
+    const unreadableDiary = /file is not a database|file is encrypted/i.test(loadError);
+    return <View style={{ flex: 1, backgroundColor: C.bg, justifyContent: 'center', padding: 30, alignItems: 'center', gap: 20 }}><Leaf size={38} color={C.green} /><Heading>Bellywise</Heading>{loadError ? <><Notice warm>{unreadableDiary ? 'Bellywise could not open its encrypted diary on this device. Your existing database has not been changed.' : `${loadError} Your saved data has not been replaced.`}</Notice><Button label="Try opening again" onPress={() => { setLoadError(''); loadDiary().then(v => { savedRef.current = v; setSaved(v); if (!v.welcomed) setModal({ type: 'welcome' }); }).catch(e => setLoadError(e instanceof Error ? e.message : 'Your diary could not be opened.')); }} />{unreadableDiary && Platform.OS !== 'web' && <Button label="Start a new diary on this device" variant="secondary" onPress={() => Alert.alert('Start a new diary?', 'Bellywise will create a separate empty diary on this device. The unreadable database will be kept, but its entries will not appear in the new diary.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Start new diary', onPress: () => { setLoadError(''); startFreshDiary().then(v => { savedRef.current = v; setSaved(v); setModal({ type: 'welcome' }); }).catch(e => setLoadError(e instanceof Error ? e.message : 'A new diary could not be created.')); } }])} />}</> : <ActivityIndicator color={C.green} />}</View>;
+  }
 
   const nav = (mobile = false) => tabs.map(item => <Pressable key={item.id} accessibilityRole="tab" accessibilityState={{ selected: tab === item.id }} accessibilityLabel={item.label} onPress={() => setTab(item.id)} style={({ pressed }) => mobile ? { flex: 1, alignItems: 'center', gap: 5, paddingVertical: 10, opacity: pressed ? 0.5 : 1 } : { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 15, paddingHorizontal: 19, borderRadius: 12, backgroundColor: tab === item.id ? '#E8F0DB' : 'transparent', opacity: pressed ? 0.5 : 1 }}><item.icon color={mobile ? tab === item.id ? C.green : C.muted : tab === item.id ? C.green : '#C3D1C5'} size={mobile ? 21 : 20} strokeWidth={1.7} /><T style={{ fontSize: mobile ? 10 : 13, fontFamily: tab === item.id ? F.semi : F.regular, color: mobile ? tab === item.id ? C.green : C.muted : tab === item.id ? C.green : '#C3D1C5' }}>{mobile ? ({ journal: 'Journal', patterns: 'Patterns', learn: 'Discover', you: 'My space' }[item.id]) : item.label}</T>{!mobile && tab === item.id && <View style={{ marginLeft: 'auto', width: 5, height: 5, borderRadius: 3, backgroundColor: C.green }} />}</Pressable>);
 

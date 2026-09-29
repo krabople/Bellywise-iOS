@@ -146,7 +146,7 @@ trap collect_simulator_diagnostics EXIT
 SIMULATOR_SDK="$(xcrun --sdk iphonesimulator --show-sdk-version)"
 touch "$ARTIFACT_DIR/app-stdout.log" "$ARTIFACT_DIR/app-stderr.log"
 python3 "$SCRIPT_DIR/simulator-session.py" start --artifacts "$ARTIFACT_DIR" \
-  --bundle "$BUNDLE_ID" --app "$SIMULATOR_APP" --sdk "$SIMULATOR_SDK"
+  --bundle "$BUNDLE_ID" --app "$SIMULATOR_APP" --sdk "$SIMULATOR_SDK" --family iPad
 SIMULATOR_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["device"])' "$ARTIFACT_DIR/simulator-session.json")"
 APP_PID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pid"])' "$ARTIFACT_DIR/simulator-session.json")"
 

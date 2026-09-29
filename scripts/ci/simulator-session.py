@@ -16,8 +16,10 @@ def version(value):
     return tuple((list(map(int, match[1].split('.'))) + [0, 0])[:3]) if match else (0, 0, 0)
 
 
-def select_device(data, sdk):
+def select_device(data, sdk, family='iPhone'):
     """Prefer an installed stable runtime no newer than the selected Xcode's SDK."""
+    if family not in ('iPhone', 'iPad'):
+        raise ValueError('Unsupported simulator family.')
     runtimes = [r for r in data['runtimes'] if r.get('isAvailable') and
                 '.iOS-' in r.get('identifier', '') and
                 not re.search(r'beta|preview|release candidate', json.dumps(r), re.I) and
@@ -27,7 +29,7 @@ def select_device(data, sdk):
         existing = {d.get('deviceTypeIdentifier') for d in data.get('devices', {}).get(runtime['identifier'], []) if d.get('isAvailable')}
         candidates = []
         for device in data['devicetypes']:
-            if not device.get('name', '').startswith('iPhone'):
+            if not device.get('name', '').startswith(family):
                 continue
             if supported and device['identifier'] not in supported:
                 continue
@@ -39,10 +41,11 @@ def select_device(data, sdk):
                 continue
             candidates.append(device)
         if candidates:
-            # A conventional screen size also keeps the welcome CTA in the screenshot.
-            chosen = max(candidates, key=lambda d: (d['name'] == 'iPhone 16 Pro', d['name'] == 'iPhone 16', d['name']))
+            # Prefer a conventional device, then the newest compatible type.
+            preferred = 'iPhone 16 Pro' if family == 'iPhone' else 'iPad Air 13-inch (M3)'
+            chosen = max(candidates, key=lambda d: (d['name'] == preferred, d['name']))
             return runtime['identifier'], chosen['identifier']
-    raise RuntimeError('No compatible available stable iPhone runtime at or below the selected simulator SDK.')
+    raise RuntimeError(f'No compatible available stable {family} runtime at or below the selected simulator SDK.')
 
 
 def boot_completed(returncode, output):
@@ -197,7 +200,7 @@ class Session:
             self.simctl('shutdown', device, name='simulator-cleanup-shutdown', timeout=30)
             self.simctl('delete', device, name='simulator-cleanup-delete', timeout=30)
 
-    def start(self, app, sdk):
+    def start(self, app, sdk, family='iPhone'):
         if os.environ.get('GITHUB_ACTIONS') != 'true':
             raise RuntimeError('Fresh-device simulator automation is restricted to GitHub Actions CI.')
         if self.state['created']:
@@ -207,7 +210,7 @@ class Session:
         code, output = self.simctl('list', '--json', name='simulator-inventory')
         if code:
             raise RuntimeError('Cannot list installed simulator runtimes.')
-        runtime, device_type = select_device(json.loads(output), sdk)
+        runtime, device_type = select_device(json.loads(output), sdk, family)
         self.report(f'SIMULATOR: SDK {sdk}; runtime {runtime}; type {device_type}.')
         for fresh_attempt in (1, 2):
             name = f'Bellywise-CI-{os.environ.get("GITHUB_RUN_ID", "run")}-{uuid.uuid4().hex[:8]}'
@@ -278,6 +281,7 @@ def main():
     parser.add_argument('--bundle', required=True)
     parser.add_argument('--app')
     parser.add_argument('--sdk')
+    parser.add_argument('--family', choices=['iPhone', 'iPad'], default='iPhone')
     args = parser.parse_args()
     if not re.fullmatch(r'[A-Za-z0-9.-]+', args.bundle):
         parser.error('Invalid bundle ID.')
@@ -286,7 +290,7 @@ def main():
         if args.action == 'start':
             if not args.app or not args.sdk:
                 parser.error('start requires --app and --sdk.')
-            session.start(args.app, args.sdk)
+            session.start(args.app, args.sdk, args.family)
         elif args.action == 'diagnose':
             session.diagnose()
         else:

@@ -13,13 +13,17 @@ spec.loader.exec_module(module)
 
 RUNTIME = 'com.apple.CoreSimulator.SimRuntime.iOS-26-5'
 TYPE = 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro'
+IPAD_TYPE = 'com.apple.CoreSimulator.SimDeviceType.iPad-Air-13-inch-M3'
 BUNDLE = 'com.krabople.bellywise'
 INVENTORY = {
     'runtimes': [
         {'identifier': RUNTIME, 'version': '26.5', 'name': 'iOS 26.5', 'isAvailable': True},
         {'identifier': 'com.apple.CoreSimulator.SimRuntime.iOS-27-0', 'version': '27.0', 'name': 'iOS 27 beta', 'isAvailable': True},
     ],
-    'devicetypes': [{'identifier': TYPE, 'name': 'iPhone 16 Pro', 'minRuntimeVersionString': '18.0'}],
+    'devicetypes': [
+        {'identifier': TYPE, 'name': 'iPhone 16 Pro', 'minRuntimeVersionString': '18.0'},
+        {'identifier': IPAD_TYPE, 'name': 'iPad Air 13-inch (M3)', 'minRuntimeVersionString': '18.0'},
+    ],
     'devices': {},
 }
 FINISHED = 'Status=4294967295, isTerminal=YES, Elapsed=00:14.\nFinished\n'
@@ -37,6 +41,7 @@ class SimulatorTests(unittest.TestCase):
 
     def test_sdk_compatible_stable_runtime(self):
         self.assertEqual(module.select_device(INVENTORY, '26.5'), (RUNTIME, TYPE))
+        self.assertEqual(module.select_device(INVENTORY, '26.5', 'iPad'), (RUNTIME, IPAD_TYPE))
         with self.assertRaises(RuntimeError):
             module.select_device(INVENTORY, '26.4')
         self.assertEqual(module.select_device(INVENTORY, '27.0'), (RUNTIME, TYPE))
