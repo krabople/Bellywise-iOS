@@ -1,5 +1,6 @@
 import { patternTimeline } from './src/domain/patternTimeline';
 import { FoodGroupHistory } from './src/components/FoodGroupHistory';
+import { AppTutorial, type TutorialDestination } from './src/components/AppTutorial';
 import { groupPatternsForDisplay, mealExposures } from './src/domain/patternEvidence';
 import { notificationRoute } from './src/domain/notificationRoute';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -116,6 +117,15 @@ function Bellywise() {
   }, [saved, demo, analysis.patterns]);
   const run = async (action: () => Promise<void>, message?: string) => { try { await action(); if (message) setNotice(message); } catch (e) { setNotice(e instanceof Error ? e.message : 'Something went wrong. Please try again.'); } };
   const startDemo = () => { const example = { ...emptyDiary(), welcomed: true, selectedSymptoms: BUILT_IN_SYMPTOMS.map(s => s.id), data: getDemoData() }; demoRef.current = example; setDemo(example); setModal(null); setSelectedDay(moveDay(today, -1)); setTab('journal'); };
+  const finishTutorial = async (destination: TutorialDestination) => {
+    if (!active.welcomed) await commit(state => ({ ...state, welcomed: true }));
+    if (destination === 'example') { startDemo(); return; }
+    if (destination === 'journal') { setModal(null); return; }
+    demoRef.current = null; setDemo(null);
+    setSelectedDay(today); setWeekEnd(today);
+    setTab(destination === 'notifications' ? 'you' : 'journal');
+    setModal({ type: destination });
+  };
   const exitDemo = () => { demoRef.current = null; setDemo(null); setSelectedDay(today); setWeekEnd(today); setNotice('Your personal diary is ready. The example entries were kept separate.'); };
   const mealEntries = data.meals.filter(m => localDateKey(new Date(m.eatenAt)) === selectedDay);
   const symptomEntries = data.symptoms.filter(s => localDateKey(new Date(s.occurredAt)) === selectedDay);
@@ -185,7 +195,8 @@ function Bellywise() {
         </>}
         {tab === 'you' && <>
           <T style={s.eyebrow}>MADE PERSONAL</T><Heading style={{ marginTop: 8 }}>Your journal. Your choices.</Heading><T muted style={{ marginTop: 10, marginBottom: 28 }}>Make Bellywise work for you, and keep control of your data.</T>
-          <View style={{ gap: 18 }}><Card><Row style={{ marginBottom: 14 }}><Heart size={22} color={C.green} /><T style={{ fontFamily: F.semi, fontSize: 16 }}>What would you like to track?</T></Row><T muted style={{ marginBottom: 18 }}>Choose built-in symptoms and positive feelings, or add your own. You’re currently tracking {active.selectedSymptoms.length}.</T><Button label="Personalise my symptoms" variant="secondary" onPress={() => setModal({ type: 'symptoms' })} /></Card>
+          <View style={{ gap: 18 }}><Card><Row style={{ marginBottom: 14 }}><CircleHelp size={22} color={C.green} /><T style={{ fontFamily: F.semi, fontSize: 16 }}>A little help getting started</T></Row><T muted style={{ marginBottom: 18 }}>Revisit the quick tour: food and drinks, ingredients, feelings, daily reviews and patterns. Try the examples without changing your diary.</T><Button label="Replay tutorial" variant="secondary" onPress={() => setModal({ type: 'welcome' })} /></Card>
+            <Card><Row style={{ marginBottom: 14 }}><Heart size={22} color={C.green} /><T style={{ fontFamily: F.semi, fontSize: 16 }}>What would you like to track?</T></Row><T muted style={{ marginBottom: 18 }}>Choose built-in symptoms and positive feelings, or add your own. You’re currently tracking {active.selectedSymptoms.length}.</T><Button label="Personalise my symptoms" variant="secondary" onPress={() => setModal({ type: 'symptoms' })} /></Card>
             <Card><Row style={{ marginBottom: 14 }}><Bell size={22} color={C.green} /><T style={{ fontFamily: F.semi, fontSize: 16 }}>Gentle reminders</T></Row><T muted style={{ marginBottom: 18 }}>{demo ? 'Notification choices belong to your personal diary. Return to it before changing them.' : Platform.OS === 'web' ? 'Local notifications are available in the iPhone and iPad app.' : (notifications.foodRemindersEnabled || notifications.dayReviewReminderEnabled || notifications.patternAlertsEnabled) ? [notifications.foodRemindersEnabled ? 'Food at ' + notifications.foodReminderTimes.map(time => String(time.hour).padStart(2, '0') + ':' + String(time.minute).padStart(2, '0')).join(', ') : '', notifications.dayReviewReminderEnabled ? 'Day review at ' + String(notifications.dayReviewReminderHour).padStart(2, '0') + ':' + String(notifications.dayReviewReminderMinute).padStart(2, '0') : '', notifications.patternAlertsEnabled ? 'New pattern alerts on' : ''].filter(Boolean).join(' · ') : 'Choose food reminders, a day-review reminder, and whether Bellywise should tell you when a stronger new pattern appears.'}</T><Button label={demo ? 'Return to my diary' : 'Choose notifications'} variant="secondary" onPress={demo ? exitDemo : () => setModal({ type: 'notifications' })} /></Card>
             <Card><Row style={{ marginBottom: 14 }}><ShieldCheck size={22} color={C.green} /><T style={{ fontFamily: F.semi, fontSize: 16 }}>Private by design</T></Row><T muted style={{ marginBottom: 15 }}>{Platform.OS === 'web' ? 'This browser preview stores its diary in this browser, without database encryption. Use fictional data here. The iOS app uses encrypted on-device storage.' : 'Your diary is encrypted on this device. Bellywise has no diary server, advertising SDK or analytics. Keep an exported backup if you need to move phones.'}</T><Button label="Privacy & data details" variant="ghost" icon={ArrowUpRight} onPress={() => setModal({ type: 'privacy' })} /></Card>
             <Card><Row style={{ marginBottom: 14 }}><ArrowDownToLine size={22} color={C.green} /><T style={{ fontFamily: F.semi, fontSize: 16 }}>Take your story with you</T></Row><T muted style={{ marginBottom: 18 }}>Export a readable report for a healthcare professional, or save a backup to restore later. Exports contain your diary and are not encrypted.</T><Row style={{ flexWrap: 'wrap' }}><Button label="Export a report" icon={ArrowDownToLine} variant="secondary" onPress={() => run(() => exportFile(createReport(data, definitions, analysis.patterns, !!demo), 'Bellywise-diary-report.txt', 'text/plain'), 'Your report is ready to save or share.')} /><Button label="Save backup" icon={ArrowDownToLine} variant="ghost" onPress={() => run(() => exportFile(JSON.stringify(active, null, 2), 'Bellywise-backup.json'), 'Your backup is ready. Keep it somewhere private.')} /><Button label="Restore backup" icon={Upload} variant="ghost" onPress={() => run(async () => { const raw = await importFile(); if (raw) setModal({ type: 'restore', diary: parseDiary(raw) }); })} /></Row></Card>
@@ -200,7 +211,7 @@ function Bellywise() {
     <ModalHost modal={modal} active={active} definitions={definitions} demo={!!demo}
       selectedDay={selectedDay} selectedCheckIn={selectedCheckIn} commit={commit}
       changeData={changeData} run={run} setModal={setModal} setNotice={setNotice}
-      setSelectedDay={setSelectedDay} startDemo={startDemo} emergingPatterns={analysis.patterns.filter(pattern => pattern.status === 'emerging')} />
+      setSelectedDay={setSelectedDay} finishTutorial={finishTutorial} emergingPatterns={analysis.patterns.filter(pattern => pattern.status === 'emerging')} />
   </View>;
 }
 
@@ -217,16 +228,16 @@ interface ModalHostProps {
   setModal: (modal: ModalState) => void;
   setNotice: (notice: string) => void;
   setSelectedDay: (date: string) => void;
-  startDemo: () => void;
+  finishTutorial: (destination: TutorialDestination) => Promise<void>;
   emergingPatterns: PatternResult[];
 }
 
 /** Keep each modal's discriminated state and event handlers in a bounded render branch. */
-function ModalHost({ modal, active, definitions, demo, selectedDay, selectedCheckIn, commit, changeData, run, setModal, setNotice, setSelectedDay, startDemo, emergingPatterns }: ModalHostProps): React.JSX.Element | null {
+function ModalHost({ modal, active, definitions, demo, selectedDay, selectedCheckIn, commit, changeData, run, setModal, setNotice, setSelectedDay, finishTutorial, emergingPatterns }: ModalHostProps): React.JSX.Element | null {
   if (!modal) return null;
   switch (modal.type) {
     case 'welcome':
-      return <Sheet title="Welcome to Bellywise" subtitle="A little awareness. A little more you." onClose={() => run(() => commit(s => ({ ...s, welcomed: true }))).then(() => setModal(null))}><View style={{ alignItems: 'center' }}><Botanical size={155} /></View><Heading size={25}>Get curious about what{ '\n'}makes you feel like you.</Heading><T muted>Log what you eat and how you feel. Bellywise helps you explore possible connections and bring a clearer story to your healthcare professional.</T><Notice>{SAFETY_NOTICES.general}</Notice>{Platform.OS === 'web' && <Notice warm>Browser preview: use fictional entries. Camera OCR and encrypted storage are available in the native iOS build.</Notice>}<Button label="Start my journal" icon={ArrowRight} onPress={() => run(async () => { await commit(s => ({ ...s, welcomed: true })); setModal(null); })} /><Button label="Explore with example entries" variant="secondary" onPress={startDemo} /></Sheet>;
+      return <AppTutorial replay={active.welcomed} onFinish={finishTutorial} />;
     case 'meal':
       return <MealForm initial={modal.meal} selectedDay={selectedDay} initialMode={modal.mode} customIngredients={active.data.customIngredients ?? []} onAddCustomIngredient={ingredient => commit(state => ({ ...state, data: { ...state.data, customIngredients: [...(state.data.customIngredients ?? []).filter(item => item.id !== ingredient.id), ingredient] } }))} onClose={() => setModal(null)} onSave={m => changeData(d => ({ ...d, meals: [...d.meals.filter(x => x.id !== m.id), m], checkIns: invalidateDays(d.checkIns, [m.eatenAt, modal.meal?.eatenAt]) })).then(() => { setSelectedDay(localDateKey(new Date(m.eatenAt))); setNotice('Food saved to your journal.'); })} onDelete={modal.meal ? () => changeData(d => ({ ...d, meals: d.meals.filter(x => x.id !== modal.meal!.id), checkIns: invalidateDays(d.checkIns, [modal.meal!.eatenAt]) })) : undefined} />;
     case 'symptom':
