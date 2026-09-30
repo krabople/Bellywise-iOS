@@ -92,6 +92,7 @@ export function AppTutorial({ replay = false, onFinish }: { replay?: boolean; on
               <View style={styles.inset}><Tip icon={foodMethods[foodMethod].icon} title={foodMethods[foodMethod].title}>{foodMethods[foodMethod].text}</Tip></View>
             </Practice>
             <Tip icon={Utensils} title="Build a whole meal">Choose Breakfast, Lunch, Dinner or Snack under “Add to a meal”. Use “Save & add another” to keep scanning items into that meal. Use the Drink option for drinks.</Tip>
+            <Tip icon={Utensils} title="Having it again?">Choose “Use a previous meal” in Journal, or “Log again” on an entry. Reuse the ingredients you recorded, choose the new time and meal, and leave out anything you didn’t have again.</Tip>
             <Tip icon={Clock} title="Set the time you actually had it">Check “Had at”, especially when logging later. Tap an entry in your journal whenever you need to edit it.</Tip>
           </>}
 
