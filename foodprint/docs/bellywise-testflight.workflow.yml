@@ -137,6 +137,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/ci/apple-setup.mjs --apply --output-dir "$RUNNER_TEMP/bellywise-signing"
+          node scripts/ci/prepare-widget-signing.mjs
 
       - name: Keep non-secret signing summary
         if: ${{ always() && steps.apple.outcome == 'success' }}
@@ -219,6 +220,21 @@ jobs:
           project.root_object.attributes['TargetAttributes'] ||= {}
           project.root_object.attributes['TargetAttributes'][target.uuid] ||= {}
           project.root_object.attributes['TargetAttributes'][target.uuid]['ProvisioningStyle'] = 'Manual'
+          widget_folder = File.join(folder, 'widget')
+          widget_manifest = JSON.parse(File.read(File.join(widget_folder, 'manifest.json')))
+          widget_uuid = widget_manifest.fetch('profileUuid')
+          FileUtils.cp(File.join(widget_folder, "#{widget_uuid}.mobileprovision"), File.join(destination, "#{widget_uuid}.mobileprovision"))
+          widgets = project.targets.select { |entry| entry.name == 'BellywiseQuickLog' && entry.product_type == 'com.apple.product-type.app-extension' }
+          raise 'Expected exactly one Bellywise widget target' unless widgets.length == 1
+          widgets.first.build_configurations.each do |configuration|
+            settings = configuration.build_settings
+            raise 'Unexpected widget bundle identifier' unless settings['PRODUCT_BUNDLE_IDENTIFIER'] == "#{ENV.fetch('APP_BUNDLE_ID')}.quicklog"
+            settings['DEVELOPMENT_TEAM'] = ENV.fetch('TEAM_ID')
+            settings['CODE_SIGN_STYLE'] = 'Manual'
+            settings['CODE_SIGN_IDENTITY[sdk=iphoneos*]'] = ENV.fetch('CERTIFICATE_SHA1')
+            settings['PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]'] = widget_manifest.fetch('profileName')
+            settings['CURRENT_PROJECT_VERSION'] = ENV.fetch('BUILD_NUMBER')
+          end
           project.save
           # Expo may write a literal CFBundleVersion rather than referring to the build setting.
           info_path = 'ios/Bellywise/Info.plist'

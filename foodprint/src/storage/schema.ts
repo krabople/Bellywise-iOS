@@ -7,6 +7,7 @@ export interface SavedDiary {
   data: AppData;
   selectedSymptoms: string[];
   welcomed: boolean;
+  lastDailyReviewPromptDate?: string;
 }
 
 export const emptyData = (): AppData => ({ meals: [], symptoms: [], checkIns: [], customSymptoms: [], customIngredients: [], notificationPreferences: { foodRemindersEnabled: false, foodReminderTimes: [{ key: 'food-1', hour: 8, minute: 0 }], dayReviewReminderEnabled: false, dayReviewReminderHour: 20, dayReviewReminderMinute: 30, patternAlertsEnabled: false, notifiedPatternKeys: [] } });
@@ -28,6 +29,7 @@ export function parseDiary(raw: string): SavedDiary {
   const value: unknown = JSON.parse(raw);
   if (!record(value) || value.version !== 1 || !record(value.data) || !list(value.selectedSymptoms) ||
     !value.selectedSymptoms.every(identifier) || typeof value.welcomed !== 'boolean') throw new Error('This is not a supported diary backup.');
+  if (value.lastDailyReviewPromptDate !== undefined && !calendarDate(value.lastDailyReviewPromptDate)) throw new Error('The daily review reminder date is invalid.');
   const d = value.data;
   if (!list(d.meals) || !list(d.symptoms) || !list(d.checkIns) || !list(d.customSymptoms)) throw new Error('The backup is incomplete.');
   const validIngredients = (v: unknown) => list(v) && v.length <= 500 && v.every(i => record(i) && identifier(i.id) && name(i.name, 300) && ['confirmed', 'inferred'].includes(i.confidence) && (i.excludedComponents === undefined || (list(i.excludedComponents) && i.excludedComponents.every(identifier))) && (i.derivedFrom === undefined || identifier(i.derivedFrom)));

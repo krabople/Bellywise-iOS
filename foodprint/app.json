@@ -68,7 +68,8 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "./plugins/with-local-notifications-only"
+      "./plugins/with-local-notifications-only",
+      "./plugins/with-quick-log-widget"
     ]
   }
 }
