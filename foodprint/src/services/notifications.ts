@@ -1,19 +1,19 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import { isCompletedReviewNotification, plannedDayReviews, reviewReminderChanges } from '../domain/dayReviewReminders';
+import type { DayCheckIn, NotificationPreferences } from '../domain/types';
 
 let handlerConfigured = false;
 
-export function configureLocalNotifications() {
+export function configureLocalNotifications(getCheckIns: () => DayCheckIn[] = () => []) {
   if (handlerConfigured || Platform.OS === 'web') return;
   // Belt-and-braces: this app intentionally uses only iOS local scheduling.
   void Notifications.setAutoServerRegistrationEnabledAsync(false).catch(() => {});
   Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
+    handleNotification: async notification => {
+      const show = !isCompletedReviewNotification(notification.request.content.data ?? {}, getCheckIns());
+      return { shouldShowBanner: show, shouldShowList: show, shouldPlaySound: show, shouldSetBadge: false };
+    },
   });
   handlerConfigured = true;
 }
@@ -32,7 +32,8 @@ export async function replaceLocalReminders(previousIds: (string | undefined)[],
     if (!previousId) continue;
     try { await Notifications.cancelScheduledNotificationAsync(previousId); } catch { /* It may have been removed in iOS Settings. */ }
   }
-  if (!enabled) return [];
+  // The review scheduler below owns date-specific reminders, never a daily repeat.
+  if (!enabled || kind === 'day-review') return [];
   const content = kind === 'food'
     ? { title: 'Time to log food or drink', body: 'Add what you ate or drank while it is still fresh in your mind.' }
     : { title: 'How was your day?', body: 'Log any feelings, or confirm that today was symptom-free.' };
@@ -49,6 +50,26 @@ export async function replaceLocalReminders(previousIds: (string | undefined)[],
     throw error;
   }
   return ids;
+}
+
+let reviewQueue = Promise.resolve();
+/** Reconcile the local iOS queue after saving reviews/preferences and on launch/resume.
+ * 45 one-off reviews + at most 3 repeating food reminders stay below iOS's 64 limit.
+ * Completed dates are physically cancelled, so no background JavaScript is needed. */
+export function reconcileDayReviewReminders(checkIns: DayCheckIn[], preferences: NotificationPreferences, now = new Date()): Promise<void> {
+  if (Platform.OS === 'web') return Promise.resolve();
+  const operation = reviewQueue.then(async () => {
+    const plan = preferences.dayReviewReminderEnabled ? plannedDayReviews(checkIns, { hour: preferences.dayReviewReminderHour, minute: preferences.dayReviewReminderMinute }, now) : [];
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    const changes = reviewReminderChanges(plan, scheduled.map(row => ({ identifier: row.identifier, kind: row.content.data?.kind })), preferences.dayReviewReminderId);
+    for (const identifier of changes.cancel) await Notifications.cancelScheduledNotificationAsync(identifier);
+    for (const reminder of changes.add) await Notifications.scheduleNotificationAsync({
+      identifier: reminder.id, content: { title: 'How was your day?', body: 'Log any feelings, or confirm that the day was symptom-free.', sound: 'default', data: { kind: 'day-review-reminder', date: reminder.date } },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: reminder.at },
+    });
+  });
+  reviewQueue = operation.catch(() => {});
+  return operation;
 }
 
 export async function notifyNewPatterns(patterns: { id?: string; ingredientName: string; symptomName: string }[]): Promise<void> {

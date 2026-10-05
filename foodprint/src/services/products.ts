@@ -1,7 +1,10 @@
 import { isPackagingText, ingredientPrefix } from '../domain/ingredientTextPolicy';
 import { matchIngredientPhrases } from '../domain/ingredients';
+import { brandInQuery } from '../domain/brands';
+import { parseIngredientLabel } from './labelParser';
 /** Public product records only. Diary entries, symptoms and photographs never enter this API. */
 export interface CatalogProduct {
+  id?: string;
   barcode: string;
   name: string;
   brands?: string;
@@ -14,6 +17,10 @@ export interface CatalogProduct {
   sourceUrl: string;
   attribution: string;
   warnings: string[];
+  country?: string;
+  sourceLabel?: string;
+  sourceApiUrl?: string;
+  ingredientConfidence?: 'confirmed' | 'inferred';
 }
 
 export type CatalogErrorCode = 'invalid-input' | 'rate-limited' | 'timeout' | 'network' | 'unavailable';
@@ -27,7 +34,7 @@ export class CatalogError extends Error {
 
 export const PRODUCT_ATTRIBUTION = 'Product data: Open Food Facts contributors · Open Database License (ODbL)';
 const API_ROOT = 'https://world.openfoodfacts.org';
-const FIELDS = 'code,product_name,product_name_en,brands,ingredients_text,ingredients_text_en,ingredients,allergens_tags,traces_tags,labels_tags';
+const FIELDS = 'code,product_name,product_name_en,brands,ingredients_text,ingredients_text_en,ingredients,allergens_tags,traces_tags,labels_tags,countries_tags';
 const USER_AGENT = 'Bellywise/1.0';
 const TIMEOUT_MS = 12000;
 const CACHE_MS = 10 * 60 * 1000;
@@ -85,15 +92,16 @@ export function normalizeCatalogProduct(value: unknown): CatalogProduct | null {
     allergens: tagList(product.allergens_tags), traces: tagList(product.traces_tags), labels: tagList(product.labels_tags),
     sourceUrl: `${API_ROOT}/product/${encodeURIComponent(barcode)}`,
     attribution: PRODUCT_ATTRIBUTION, warnings,
+    country: tagList(product.countries_tags).map(country => country.replace(/\b\w/g, letter => letter.toUpperCase())).join(', ') || 'Market not provided', sourceLabel: 'Open Food Facts',
   };
 }
 
-async function requestJson(url: string): Promise<Record<string, unknown>> {
+async function requestJson(url: string, provider = 'Open Food Facts'): Promise<Record<string, unknown>> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const response = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': USER_AGENT }, signal: controller.signal });
-    if (response.status === 429) throw new CatalogError('rate-limited', 'Open Food Facts is receiving too many requests. Wait a minute and try again.');
+    if (response.status === 429) throw new CatalogError('rate-limited', `${provider} is receiving too many requests. Wait a minute and try again, or photograph the ingredients list.`);
     if (response.status === 404) return { status: 0 };
     if (!response.ok) throw new CatalogError('unavailable', 'The product catalog is temporarily unavailable. You can still enter or scan ingredients.');
     const body: unknown = await response.json();
@@ -101,8 +109,8 @@ async function requestJson(url: string): Promise<Record<string, unknown>> {
     return body as Record<string, unknown>;
   } catch (error) {
     if (error instanceof CatalogError) throw error;
-    if (controller.signal.aborted) throw new CatalogError('timeout', 'The product search took too long. Check your connection and try again.');
-    throw new CatalogError('network', 'Could not reach Open Food Facts. Check your connection, or enter ingredients manually.');
+    if (controller.signal.aborted) throw new CatalogError('timeout', `${provider} took too long to respond. Photograph the ingredients list instead, or enter the ingredients manually.`);
+    throw new CatalogError('network', `Could not reach ${provider}. Photograph the ingredients list instead, or enter the ingredients manually.`);
   } finally {
     clearTimeout(timeout);
   }
@@ -116,7 +124,7 @@ async function cachedRequest(key: string, kind: 'barcode' | 'search', load: () =
   if (Date.now() < nextRequestAt[kind]) {
     throw new CatalogError('rate-limited', 'Please wait a few seconds before another product search.');
   }
-  // OFF documents per-IP limits; automatic suggestions are debounced and wait for this budget.
+  // OFF documents per-IP limits. Suggestions are local; remote searches are explicit.
   nextRequestAt[kind] = Date.now() + (kind === 'search' ? 6500 : 4500);
   const request = load().then(value => {
     if (cache.size >= 50) cache.delete(cache.keys().next().value!);
@@ -143,15 +151,57 @@ export async function lookupBarcode(barcode: string): Promise<CatalogProduct | n
 }
 
 /** OFF v2 does not support plain-text search; use its documented legacy search endpoint. */
-export async function searchProducts(query: string): Promise<CatalogProduct[]> {
+export async function searchProducts(query: string, options: { page?: number; country?: string } = {}): Promise<CatalogProduct[]> {
   const terms = query.replace(/\s+/g, ' ').trim();
   if (terms.length < 2 || terms.length > 120) throw new CatalogError('invalid-input', 'Enter a product name between 2 and 120 characters.');
-  return cachedRequest(`search:${terms.toLocaleLowerCase()}`, 'search', async () => {
-    const params = new URLSearchParams({ search_terms: terms, search_simple: '1', action: 'process', json: '1', page_size: '12', page: '1', fields: FIELDS });
+  const page = options.page ?? 1, brand = brandInQuery(terms);
+  if (!Number.isInteger(page) || page < 1 || page > 100) throw new CatalogError('invalid-input', 'Choose a valid product page.');
+  return cachedRequest(`search:${terms.toLocaleLowerCase()}:${page}:${options.country ?? ''}`, 'search', async () => {
+    const params = new URLSearchParams({ search_terms: brand?.remaining ?? terms, search_simple: '1', action: 'process', json: '1', page_size: '50', page: String(page), fields: FIELDS });
+    if (brand) { params.set('tagtype_0', 'brands'); params.set('tag_contains_0', 'contains'); params.set('tag_0', brand.brand.key.replace(/ /g, '-')); }
+    if (options.country) { params.set('tagtype_1', 'countries'); params.set('tag_contains_1', 'contains'); params.set('tag_1', options.country.toLowerCase().replace(/ /g, '-')); }
     const body = await requestJson(`${API_ROOT}/cgi/search.pl?${params.toString()}`);
     if (!Array.isArray(body.products)) throw new CatalogError('unavailable', 'The catalog could not return product results. Try again later.');
     return body.products.map(normalizeCatalogProduct).filter((product): product is CatalogProduct => product !== null);
   });
 }
 
+/** Manufacturer selections refresh only the public API URL shipped with this menu. */
+export async function refreshSelectedProduct(product: CatalogProduct): Promise<CatalogProduct> {
+  if (!product.sourceApiUrl) return product;
+  const url = new URL(product.sourceApiUrl);
+  if (url.origin !== 'https://www.mcdonalds.com' || url.pathname !== '/dnaapp/itemDetails' || url.searchParams.get('country') !== 'UK') throw new CatalogError('invalid-input', 'Unsupported manufacturer source.');
+  const body = await requestJson(url.toString(), 'McDonald’s UK');
+  if (!body.item || typeof body.item !== 'object') throw new CatalogError('unavailable', 'The manufacturer could not return its current ingredient list. Scan the ingredients or enter them manually.');
+  const item = body.item as Record<string, unknown>;
+  const components = (item.components as { component?: unknown[] } | undefined)?.component;
+  const statements = Array.isArray(components) ? components.flatMap(value => {
+    if (!value || typeof value !== 'object') return [];
+    const component = value as Record<string, unknown>;
+    return component.is_default === 1 && typeof component.ingredient_statement === 'string' ? [component.ingredient_statement.replace(/<br\s*\/?\s*>/gi, '\n')] : [];
+  }) : [];
+  const ingredientsText = statements.map(stringField).filter(Boolean).join('\n');
+  const alternatives = /\beither\b|\bor\s*:/i.test(ingredientsText);
+  // Parse each component separately: a bun's trace warning must not discard the sauce or patty.
+  const parsed = statements.map(statement => parseIngredientLabel(manufacturerIngredientText(statement), { source: 'catalog' }));
+  const ingredientNames = [...new Set(parsed.flatMap(part => part.ingredients))];
+  return { ...product, ingredientsText: ingredientsText || undefined, ingredients: ingredientNames.map(name => ({ id: name, name })),
+    allergens: [...new Set(parsed.flatMap(part => part.allergens))], traces: [...new Set(parsed.flatMap(part => part.mayContain))],
+    ingredientConfidence: alternatives ? 'inferred' : 'confirmed', warnings: [...new Set(['Current published UK ingredient statements from McDonald’s. Check modifications to your order.', ...parsed.flatMap(part => part.warnings), ...(alternatives ? ['Alternative supplier recipes are listed. Possible ingredients remain estimates until you confirm the version you ate.'] : [])])] };
+}
+
 export const productSearchDelay = () => Math.max(0, nextRequestAt.search - Date.now());
+
+/** Manufacturer fields contain accessible UI annotations as well as food text.
+ * Cleaning is scoped to the explicit ingredient_statement field, never a menu description. */
+export function manufacturerIngredientText(statement: string): string {
+  const clean = statement.replace(/<span\b[^>]*>\s*(?:Potential\s+)?Allergen Ingredient:\s*<\/span>/gi, '')
+    .replace(/<br\s*\/?\s*>/gi, '\n');
+  const plain = stringField(clean) ?? '';
+  const single = /^\s*100\s*%\s*(?:pure\s+)?([^.,\n]+)\.(?:\s|$)/i.exec(plain);
+  if (single) {
+    const advisory = plain.slice(single[0].length).match(/\b(?:may\s+contain|contains?|for\s+allergens|allergy\s+advice)\b[\s\S]*/i)?.[0];
+    return single[1].trim() + (advisory ? '\n' + advisory : '');
+  }
+  return plain.replace(/\b(?:either|or|ingredients)\s*:/gi, '');
+}

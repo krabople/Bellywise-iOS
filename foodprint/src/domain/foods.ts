@@ -1,5 +1,7 @@
 import { Confidence, FoodResolution, IngredientExposure } from './types';
-import { extraRecipes, editDistance } from './extraRecipes';
+import { extraRecipes, type Recipe } from './extraRecipes';
+import extendedGuide from '../data/extendedFoodGuide.json';
+import { spellingDistance, foodQualifierKey } from './catalogMatching';
 
 import { findIngredientRecord, ingredientCatalog, ingredientFromText, ingredientsFromNames, normalizeIngredientText } from './ingredients';
 export { ingredientCatalog, ingredientFromText, ingredientsFromNames } from './ingredients';
@@ -7,7 +9,7 @@ export { ingredientCatalog, ingredientFromText, ingredientsFromNames } from './i
 const normalize = (value: string) => normalizeIngredientText(value.replace(/&/g, ' and '));
 
 /** Recipes are editable hypotheses, not brand-specific ingredient lists. */
-const RECIPES: { names: string[]; ingredients: string[]; question?: 'grain' | 'milk' | 'cola' | 'cheese' }[] = [...extraRecipes,
+const CURATED_RECIPES: Recipe[] = [...extraRecipes,
   { names: ['bread', 'white bread', 'brown bread', 'wholemeal bread', 'toast', 'baguette', 'sourdough', 'pitta', 'pita', 'bagel', 'bread roll'], ingredients: ['wheat', 'yeast', 'salt'], question: 'grain' },
   { names: ['gluten free bread', 'gluten free toast', 'gluten free bagel'], ingredients: ['rice', 'maize', 'tapioca', 'yeast', 'salt'] },
   { names: ['pasta', 'spaghetti', 'penne', 'macaroni', 'fusilli', 'linguine'], ingredients: ['wheat'], question: 'grain' },
@@ -110,13 +112,36 @@ const RECIPES: { names: string[]; ingredients: string[]; question?: 'grain' | 'm
   { names: ['cider'], ingredients: ['apple', 'alcohol'] },
   { names: ['vodka', 'gin', 'rum', 'whisky', 'whiskey', 'tequila', 'brandy'], ingredients: ['alcohol'] },
 ];
+const RECIPES: Recipe[] = [...CURATED_RECIPES, ...extendedGuide.records];
+/** Import mapping stays independent of previously generated catalogue records. */
+export function curatedRecipeIngredients(input: string): string[] | undefined {
+  const key = normalize(input);
+  return CURATED_RECIPES.find(recipe => recipe.names.some(name => normalize(name) === key))?.ingredients;
+}
 
-export const foodCatalogSize = RECIPES.reduce((count, item) => count + item.names.length, 0) + ingredientCatalog.length;
+const recipeAliases = new Map<string, Recipe>();
+for (const recipe of RECIPES) for (const alias of recipe.names) {
+  const key = normalize(alias);
+  if (!recipeAliases.has(key)) recipeAliases.set(key, recipe);
+}
+const aliasRows = [...recipeAliases].map(([alias, recipe]) => ({ alias, recipe }));
+const qualifierMatches = (a: string, b: string) => foodQualifierKey(a) === foodQualifierKey(b);
+export const addedFoodRecordCount = extendedGuide.records.length;
+export const foodRecipeRecordCount = RECIPES.length;
+
+export const foodCatalogSize = RECIPES.length + ingredientCatalog.length;
 
 export function suggestFoodNames(input: string): string[] {
   const query = normalize(input); if (query.length < 3) return [];
-  return RECIPES.map(recipe => ({ name: recipe.names[0], score: Math.max(...recipe.names.map(alias => alias.startsWith(query) ? .98 : 1 - editDistance(query, alias) / Math.max(query.length, alias.length))) }))
-    .filter(item => item.score >= .55).sort((a, b) => b.score - a.score).slice(0, 4).map(item => item.name);
+  const results = new Map<Recipe, number>();
+  const tokens = query.split(' ');
+  for (const { alias, recipe } of aliasRows) {
+    if (!qualifierMatches(query, alias)) continue;
+    const overlap = tokens.filter(token => alias.split(' ').includes(token)).length / tokens.length;
+    const score = alias.startsWith(query) ? .98 - (alias.length - query.length) / 1000 : overlap === 1 ? .82 : spellingDistance(query, alias, 2) <= 2 ? .9 : overlap >= .5 ? .55 : 0;
+    if (score > (results.get(recipe) ?? 0)) results.set(recipe, score);
+  }
+  return [...results].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([recipe]) => recipe.names === undefined ? '' : ('name' in recipe ? String(recipe.name) : recipe.names[0]));
 }
 const grainOptions = [{ id: 'standard', label: 'Regular recipe' }, { id: 'gluten-free', label: 'Gluten-free' }];
 const milkOptions = [{ id: 'standard', label: 'Regular dairy' }, { id: 'lactose-free', label: 'Lactose-free dairy' }, { id: 'oat', label: 'Oat' }, { id: 'soy', label: 'Soy' }, { id: 'almond', label: 'Almond' }, { id: 'dairy-free', label: 'Other dairy-free' }];
@@ -135,16 +160,17 @@ export function resolveFood(input: string, variant?: string): FoodResolution {
   const glutenFree = /\bgluten free\b|\b(?:without|no) gluten\b/.test(`${query} ${variantText}`);
   const lactoseFree = /\blactose free\b/.test(`${query} ${variantText}`);
   const vegan = /\bvegan\b/.test(`${query} ${variantText}`);
+  const vegetarian = vegan || /\b(?:vegetarian|veggie|meat free|meatfree|meatless|plant based)\b/.test(query);
   const decaf = /\b(?:decaf|decaffeinated|caffeine free)\b/.test(`${query} ${variantText}`);
   const alcoholFree = /\b(?:alcohol free|non alcoholic)\b/.test(`${query} ${variantText}`);
   const sugarFree = /\b(?:sugar free|diet|zero sugar)\b/.test(`${query} ${variantText}`);
   const dairyFree = vegan || /\b(?:dairy|milk) free\b|\b(?:without|no) (?:milk|dairy)\b/.test(`${query} ${variantText}`) || /^(oat|soy|almond)$/.test(variantText);
   const stripped = query.replace(/\b(?:gluten free|lactose free|dairy free|milk free|vegan|decaf|decaffeinated|caffeine free|alcohol free|non alcoholic|sugar free|diet|zero sugar)\b/g, '').replace(/\b(?:without|no)\s+.*$/, '').replace(/\s+/g, ' ').trim();
-  const exactRecipe = RECIPES.find(item => item.names.includes(query));
-  const close = !exactRecipe && !findIngredientRecord(stripped) && stripped.length >= 6
-    ? RECIPES.map(item => ({ item, distance: Math.min(...item.names.map(alias => editDistance(stripped, alias))) })).sort((a, b) => a.distance - b.distance) : [];
-  const fuzzy = close[0] && close[0].distance <= Math.min(2, Math.floor(stripped.length / 6)) && (!close[1] || close[1].distance > close[0].distance) ? close[0].item : undefined;
-  const recipe = exactRecipe ?? RECIPES.find(item => item.names.includes(stripped)) ?? fuzzy;
+  const exactRecipe = recipeAliases.get(query);
+  const close = !exactRecipe && !recipeAliases.has(stripped) && !findIngredientRecord(stripped) && query.length >= 6
+    ? aliasRows.filter(row => qualifierMatches(query, row.alias)).map(({ recipe: item, alias }) => ({ item, distance: spellingDistance(query, alias, 2) })).filter(row => row.distance <= 2).sort((a, b) => a.distance - b.distance) : [];
+  const fuzzy = close[0] && close[0].distance <= Math.min(2, Math.floor(query.length / 6)) && !close.some(other => other.item !== close[0].item && other.distance === close[0].distance) ? close[0].item : undefined;
+  const recipe = exactRecipe ?? recipeAliases.get(stripped) ?? fuzzy;
   const exactIngredient = findIngredientRecord(stripped);
   let ids = recipe ? [...recipe.ingredients] : exactIngredient ? [exactIngredient.id] : [];
   let matched = Boolean(recipe || exactIngredient);
@@ -179,6 +205,8 @@ export function resolveFood(input: string, variant?: string): FoodResolution {
     }
   }
   if (vegan) ids = ids.filter(id => !['egg', 'beef', 'chicken', 'pork', 'lamb', 'turkey', 'fish', 'shellfish', 'honey'].includes(id));
+  if (vegetarian) ids = ids.filter(id => !['beef', 'chicken', 'pork', 'lamb', 'turkey', 'fish', 'shellfish', 'gelatine'].includes(id));
+  if (recipe?.question === 'plant-protein' && ['soy', 'pea', 'mushroom'].includes(variantText)) ids.push(variantText);
   if (/^(oat|soy|almond)$/.test(variantText)) ids.push(variantText === 'oat' ? 'oats' : variantText);
   const exclusions = query.match(/\b(?:without|no)\s+(.+)$/)?.[1].split(/,|\s+or\s+|\s+and\s+/).map(text => ingredientFromText(text).id) ?? [];
   ids = [...new Set(ids.filter(id => !exclusions.includes(id)))];
@@ -189,12 +217,13 @@ export function resolveFood(input: string, variant?: string): FoodResolution {
   if (recipe?.question === 'milk' && !dairyFree && !lactoseFree && !variant) questions.push({ id: 'milk', prompt: 'Which milk or dairy was used?', options: milkOptions });
   if (recipe?.question === 'cola' && !sugarFree && !variant) questions.push({ id: 'cola', prompt: 'Which version did you drink?', options: [{ id: 'standard', label: 'Regular' }, { id: 'sugar-free', label: 'Diet / sugar-free' }] });
   if (recipe?.question === 'cheese' && !lactoseFree && !variant) questions.push({ id: 'cheese', prompt: 'Which kind of cheese was it?', options: cheeseOptions });
+  if (recipe?.question === 'plant-protein' && !variant) questions.push({ id: 'plant-protein', prompt: 'What was the main ingredient? Check the packet if you’re unsure.', options: [{ id: 'soy', label: 'Soya / tofu' }, { id: 'pea', label: 'Pea protein' }, { id: 'mushroom', label: 'Mushroom' }, { id: 'unknown', label: 'Not sure — add from label' }] });
   const ingredients: IngredientExposure[] = ids.map(id => ({ ...(compositeIngredients.get(id) ?? makeIngredient(id, exactIngredient && !recipe ? 'confirmed' : 'inferred')), excludedComponents: [glutenFree ? 'gluten' : '', lactoseFree ? 'lactose' : ''].filter(Boolean) }));
   if (!ingredients.length && name) ingredients.push(ingredientFromText(name, 'inferred'));
   return {
     name, ingredients, questions, matched,
     description: matched
-      ? `${fuzzy && !exactRecipe ? `Closest recipe: ${recipe!.names[0]}. ` : ''}Typical recipe only. Ingredients are estimates; edit anything that differs from what you ate.`
+      ? `${fuzzy && !exactRecipe ? `Closest recipe: ${recipe!.names[0]}. ` : ''}${recipe?.sourceUrl ? 'Recognised in the USDA food guide. ' : ''}${recipe?.incomplete ? 'The guide cannot supply a complete ingredient list. Add missing ingredients from your recipe or packet. ' : ''}Typical recipe only. Ingredients are estimates; edit anything that differs from what you ate.`
       : 'No complete recipe match. This entry stays uncertain until you add or confirm its ingredients.',
   };
 }

@@ -44,6 +44,7 @@ export function groupPatternsForDisplay(patterns: PatternResult[], data: AppData
   for (const product of products) {
     const linked = patterns.filter(p => !p.ingredientId.startsWith('food:') && p.symptomId === product.symptomId && p.window === product.window && signatures.get(p.ingredientId) === signatures.get(product.ingredientId)
       && p.exposedDays === product.exposedDays && p.unexposedDays === product.unexposedDays && p.exposedSymptomDays === product.exposedSymptomDays && p.unexposedSymptomDays === product.unexposedSymptomDays
+      && p.signal === product.signal && p.severity?.exposedAverage === product.severity?.exposedAverage && p.severity?.unexposedAverage === product.severity?.unexposedAverage
       && strength[p.status] <= strength[product.status] && p.confirmedExposedDays <= product.confirmedExposedDays);
     const components = [...new Map(data.meals.filter(m => foodIdentity(m) === product.ingredientId).flatMap(m => mealExposures(m).filter(i => !i.id.startsWith('food:') && i.id !== 'water')).map(i => [i.id, i])).values()];
     // Milk plus its lactose/protein is one food, not several independent ingredients.

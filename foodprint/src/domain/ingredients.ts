@@ -32,6 +32,11 @@ export const normalizeIngredientText = (text: string) => text.toLowerCase().norm
   .replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 
 const CORE_ROWS: [string, string, string[]?][] = [
+  ['bread', 'Bread / toast', ['bread', 'toast', 'toasted bread']],
+  ['gravy', 'Gravy', ['gravy granules', 'onion gravy', 'brown gravy']],
+  ['plant-sausage', 'Vegetarian / vegan sausage', ['vegetarian sausage', 'vegetarian sausages', 'vegan sausage', 'vegan sausages', 'veggie sausages', 'plant based sausages']],
+  ['buffalo-wings', 'Buffalo wings', ['buffalo chicken wings', 'hot wings']],
+  ['chilli-sauce', 'Chilli sauce', ['chili sauce', 'hot sauce', 'sriracha', 'sweet chilli sauce', 'sweet chili sauce']],
   ['wheat', 'Wheat', ['wheat flour', 'semolina', 'durum wheat', 'spelt', 'bulgur', 'couscous']],
   ['gluten', 'Gluten', ['wheat gluten', 'vital wheat gluten']],
   ['barley', 'Barley', ['barley malt', 'malt extract']], ['rye', 'Rye'], ['oats', 'Oats', ['oat', 'oat flour']],
@@ -152,7 +157,7 @@ function canonicalFamily(record: IngredientRecord): IngredientRecord {
 
 const exclusions = /^(?:gluten|dairy|lactose|milk|nut|nuts|sugar|alcohol|caffeine)\s+free$|^(?:free\s+from|without|no|no\s+added|does\s+not\s+contain)\b/;
 const stripQualifiers = (value: string) => normalizeIngredientText(value
-  .replace(/\b\d+(?:\.\d+)?\s*%\b/g, '')
+  .replace(/\b\d+(?:\.\d+)?\s*%/g, '')
   .replace(/\b(?:organic|pasteurised|pasteurized|fortified|enriched|fresh|raw|dried|dry|dehydrated|freeze[ -]dried|frozen|whole|chopped|minced|sliced|crushed|ground|grated|peeled|powdered|roasted|toasted|cooked|red|green|yellow|white|brown|orange|purple|ripe|unripe|unsweetened|sweetened|concentrated)\b/gi, ''));
 
 function inflectionCandidates(value: string): string[] {

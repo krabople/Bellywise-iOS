@@ -17,7 +17,7 @@ const foodMethods = [
   { label: 'Scan barcode', icon: ScanBarcode, title: 'Start with the packet', text: 'Point the camera at its barcode. Bellywise looks up the product’s published ingredients. If they aren’t available, photograph the ingredients list or enter them manually.' },
   { label: 'Scan ingredients', icon: Camera, title: 'Photograph the ingredients', text: 'Take or choose a photo, then draw a box around just the ingredients list. Review the separate ingredients Bellywise finds before saving.' },
   { label: 'Log manually', icon: Utensils, title: 'Type what you had', text: 'Enter a food or drink, such as “gluten-free bread” or “oat latte”. Answer any follow-up choices, then review the suggested ingredients. Recipe suggestions are estimates.' },
-  { label: 'Search by name', icon: Search, title: 'Find a brand or product', text: 'Type a brand or product name and choose the right result. Check that the variety matches your packet, then review its ingredients.' },
+  { label: 'Search by brand', icon: Search, title: 'Find a brand or product', text: 'Type a brand or product name and choose the right result. Check that the country and variety match your packet, then review its ingredients.' },
 ];
 
 function Tip({ icon: Icon, title, children }: { icon: LucideIcon; title: string; children: React.ReactNode }) {

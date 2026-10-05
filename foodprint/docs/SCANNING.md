@@ -2,7 +2,7 @@
 
 ## What is implemented
 
-Barcode scanning is the primary meal-entry route. `expo-camera` presents a live scanner for EAN-8, EAN-13, UPC-A, UPC-E and ITF-14 codes. A detected code is looked up in Open Food Facts and only the ingredient declaration returned for that exact product record is used. The barcode route never substitutes recipe assumptions based on the product name. If that record has no ingredient declaration, the UI requires a packet-label scan or manual entry instead. Every returned declaration is shown for review before saving. People can also enter a barcode number, search by product name, photograph an ingredient list, or log a meal manually.
+Barcode scanning is the primary meal-entry route. `expo-camera` presents a live scanner for EAN-8, EAN-13, UPC-A, UPC-E and ITF-14 codes. A detected code is looked up in Open Food Facts and only the ingredient declaration returned for that exact product record is used. The barcode route never substitutes recipe assumptions based on the product name. If that record has no ingredient declaration, the UI requires a packet-label scan or manual entry instead. Every returned declaration is shown for review before saving. People can also enter a barcode number, search by brand, photograph an ingredient list, or log a meal manually.
 
 The local `modules/foodprint-vision` Expo module calls Apple Vision `VNRecognizeTextRequest` on a local image. It uses accurate recognition, English preferences with automatic language detection, and ImageIO downsampling with orientation handling. It returns text, per-block confidence and normalized bounding boxes. Images stay on the device; this module has no network request. Recognition runs on a background queue. The native module's internal name remains `FoodprintVision`.
 
@@ -27,6 +27,8 @@ The parser does not infer hidden ingredients. Mapping confirmed label terms and 
 ## Open Food Facts
 
 `lookupBarcode` retrieves a product through `/api/v2/product/{code}.json`. `searchProducts` submits a plain-text query to `/cgi/search.pl`; v2 does not support full-text queries. Searches run only when the user explicitly submits them. A bounded memory cache, request deduplication, short rate-limit spacing and a 12-second timeout prevent repeated requests. The user receives actionable messages for invalid input, service limits, missing products and connection failures. [OFF API introduction and limits](https://openfoodfacts.github.io/openfoodfacts-server/api/), [official API specification](https://github.com/openfoodfacts/openfoodfacts-server/blob/main/docs/api/ref/api.yaml).
+
+The expanded offline directory and restaurant sources are documented in [CATALOGUE-SOURCES.md](CATALOGUE-SOURCES.md). Brand suggestions as you type stay local; country-filtered online results have pagination. McDonald’s selections retrieve current official UK ingredient fields. KFC and Burger King menu names without full lists require label/manual entry. Manufacturer accessibility annotations are removed before parsing, and single-ingredient declarations such as “100% Onion” are recognised.
 
 Only the submitted product query/barcode is transmitted to Open Food Facts. No diary, symptom data, identifiers or images are sent. Network metadata such as the user's IP address is necessarily visible to that service. There is no local persistent copy of catalog results in this service. A confirmed product can be saved by the diary UI. The full published label is retained for audit, while each structured ingredient node is separately available for the diary comparison engine.
 

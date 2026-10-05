@@ -1,6 +1,15 @@
-export interface Recipe { names: string[]; ingredients: string[]; question?: 'grain' | 'milk' | 'cola' | 'cheese' }
+export interface Recipe { names: string[]; ingredients: string[]; question?: 'grain' | 'milk' | 'cola' | 'cheese' | 'plant-protein'; sourceUrl?: string; incomplete?: boolean }
 /** Typical editable recipes, never a substitute for a scanned product's actual label. */
 export const extraRecipes: Recipe[] = [
+  { names: ['gravy', 'brown gravy', 'onion gravy', 'gravy granules', 'vegetarian gravy', 'vegan gravy', 'veggie gravy'], ingredients: ['maize', 'onion', 'salt'] },
+  { names: ['beef gravy'], ingredients: ['beef', 'maize', 'onion', 'salt'] },
+  { names: ['chicken gravy'], ingredients: ['chicken', 'maize', 'onion', 'salt'] },
+  { names: ['vegetarian sausages', 'vegetarian sausage', 'veggie sausages', 'veggie sausage', 'meat free sausages', 'meatfree sausages', 'vegan sausages', 'vegan sausage', 'plant based sausage', 'plant based sausages'], ingredients: ['vegetable-oil', 'salt'], question: 'plant-protein' },
+  { names: ['buffalo wings', 'buffalo chicken wings', 'buffalo wing', 'chicken buffalo wings', 'hot wings'], ingredients: ['chicken', 'chilli', 'vinegar', 'butter', 'salt'] },
+  { names: ['chilli sauce', 'chili sauce', 'hot chilli sauce', 'hot chili sauce', 'hot sauce', 'sriracha', 'sriracha sauce'], ingredients: ['chilli', 'vinegar', 'garlic', 'salt'] },
+  { names: ['sweet chilli sauce', 'sweet chili sauce', 'thai sweet chilli sauce'], ingredients: ['chilli', 'sugar', 'vinegar', 'garlic', 'maize', 'salt'] },
+  { names: ['buttered toast', 'toast with butter', 'butter on toast'], ingredients: ['wheat', 'yeast', 'salt', 'butter'], question: 'grain' },
+  { names: ['wholemeal toast', 'brown toast', 'white toast', 'sourdough toast', 'toasted bread', 'two slices of toast', 'slice of toast'], ingredients: ['wheat', 'yeast', 'salt'], question: 'grain' },
   { names: ['macaroni cheese', 'macaroni and cheese', 'mac and cheese', 'mac n cheese', 'mac cheese'], ingredients: ['wheat', 'milk', 'butter', 'cheese', 'lactose'], question: 'grain' },
   { names: ['fudge', 'vanilla fudge', 'butter fudge', 'clotted cream fudge', 'scottish tablet', 'tablet'], ingredients: ['sugar', 'milk', 'butter', 'lactose'] },
   { names: ['chocolate fudge'], ingredients: ['sugar', 'milk', 'butter', 'cocoa', 'lactose'] },

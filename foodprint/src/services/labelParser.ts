@@ -72,7 +72,7 @@ function cleanIngredientName(value: string): string {
   return cleanToken(value)
     .replace(/^_+|_+$/g, '')
     .replace(/^contains?\s+(?:(?:less\s+than\s+)?\d+(?:\.\d+)?\s*%\s*(?:or\s+less\s+of)?\s*:?)?/i, '')
-    .replace(/\b\d+(?:\.\d+)?\s*%\b/g, '')
+    .replace(/\b\d+(?:\.\d+)?\s*%/g, '')
     .replace(/\s+/g, ' ')
     .replace(/^[\s:;,]+|[\s:;,]+$/g, '')
     .trim();

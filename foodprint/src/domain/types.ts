@@ -105,6 +105,23 @@ export interface FoodResolution {
 }
 
 export type ExposureWindow = 'same-day' | 'next-day';
+export type PatternStatus = 'not-enough-data' | 'exploratory' | 'emerging';
+export interface SeverityComparison {
+  /** Rated symptom days only; absence is not invented as a zero rating. */
+  exposedDays: number;
+  unexposedDays: number;
+  exposedAverage?: number;
+  unexposedAverage?: number;
+  difference?: number;
+  probabilityOfHigher?: number;
+  completeExposedDays: number;
+  completeUnexposedDays: number;
+  pValue: number;
+  adjustedPValue: number;
+  status: PatternStatus;
+  lowStressDifference?: number;
+  restedDifference?: number;
+}
 export interface PatternResult {
   id: string;
   ingredientId: string;
@@ -124,7 +141,11 @@ export interface PatternResult {
   interval: [number, number];
   pValue: number;
   adjustedPValue: number;
-  status: 'not-enough-data' | 'exploratory' | 'emerging';
+  status: PatternStatus;
+  /** Occurrence and intensity have separate evidence checks. */
+  signal?: 'frequency' | 'severity' | 'both';
+  frequencyStatus?: PatternStatus;
+  severity?: SeverityComparison;
   headline: string;
   summary: string;
   cautions: string[];
