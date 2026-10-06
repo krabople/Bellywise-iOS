@@ -4,7 +4,7 @@ import { getIngredientInfo, ingredientCatalog } from './ingredients';
 import { benjaminiHochberg, differenceInterval, fisherExact } from './statistics';
 import { BUILT_IN_SYMPTOMS } from './symptoms';
 import { compareSeverity, isSeverityCandidate } from './severity';
-import { AnalysisResult, AppData, DayCheckIn, ExposureWindow, PatternResult } from './types';
+import { AnalysisResult, AppData, ComparisonExclusionReason, DayCheckIn, ExposureWindow, PatternComparisonDay, PatternResult } from './types';
 
 export const MINIMUM_COMPLETE_DAYS = 14;
 export const MINIMUM_COMPARISON_DAYS = 6;
@@ -77,10 +77,17 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
   const details = new Map<string, { enough: boolean; repeated: boolean; confounded: boolean; confirmedDifference?: number; completeRiskDifference: number; completeIntervalLower: number; confirmedCompleteExposedDays: number; severityEvidence: ReturnType<typeof compareSeverity> }>();
 
   for (const ingredientId of ingredientIds) for (const symptomId of symptomIds) for (const window of windows) {
+    const comparisonDays: PatternComparisonDay[] = [];
     const observations: Observation[] = ordered.flatMap(day => {
-      const outcomeDay = window === 'same-day' ? day : days.get(addDays(day.date, 1));
-      if (!outcomeDay || day.unresolvedMeal || outcomeDay.unresolvedMeal) return [];
+      const symptomDate = window === 'same-day' ? day.date : addDays(day.date, 1);
+      const outcomeDay = window === 'same-day' ? day : days.get(symptomDate);
       const exposure = day.ingredients.get(ingredientId);
+      const exclude = (...reasons: ComparisonExclusionReason[]): Observation[] => {
+        comparisonDays.push({ date: day.date, symptomDate, exposed: Boolean(exposure), symptom: false, included: false, reasons });
+        return [];
+      };
+      if (!outcomeDay) return exclude(symptomDate >= today ? 'following-day-not-finished' : 'missing-following-day');
+      if (day.unresolvedMeal || outcomeDay.unresolvedMeal) return exclude(...(day.unresolvedMeal ? ['unresolved-food-day' as const] : []), ...(outcomeDay.unresolvedMeal && outcomeDay !== day ? ['unresolved-feeling-day' as const] : []));
       const events = (outcomeDay.symptomEvents.get(symptomId) ?? []).filter(event => window !== 'same-day' || !exposure || event.time >= (day.firstExposure.get(ingredientId) ?? Infinity));
       const outcome = events.length > 0;
       const peakSeverity = events.reduce<number | undefined>((peak, event) => Number.isInteger(event.severity) && event.severity >= 1 && event.severity <= 5 ? Math.max(peak ?? 0, event.severity) : peak, undefined);
@@ -88,11 +95,12 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
       const outcomeDayComplete = Boolean(outcomeDay.checkIn?.complete && outcomeDay.checkIn.trackedSymptomIds?.includes(symptomId));
       // An explicitly logged symptom is usable even before the daily check-in.
       // Absence is usable only when the user confirmed that this feeling was tracked.
-      if (!outcome && !outcomeDayComplete) return [];
+      if (!outcome && !outcomeDayComplete) return exclude(events.length === 0 && exposure && window === 'same-day' && (outcomeDay.symptomEvents.get(symptomId)?.length ?? 0) > 0 ? 'feeling-before-food-unreviewed' : 'feeling-unconfirmed');
       // Presence of an ingredient can be used from an unfinished day; absence cannot.
-      if (!exposure && !exposureDayComplete) return [];
+      if (!exposure && !exposureDayComplete) return exclude('food-day-unfinished');
       // An uncertain exposure cannot become an unexposed control in confirmed-only mode.
-      if (options.includeInferred === false && exposure && !exposure.confirmed) return [];
+      if (options.includeInferred === false && exposure && !exposure.confirmed) return exclude('ingredient-unconfirmed');
+      comparisonDays.push({ date: day.date, symptomDate, exposed: Boolean(exposure), symptom: outcome, included: true, reasons: [] });
       return [{ date: day.date, exposed: Boolean(exposure), confirmed: Boolean(exposure?.confirmed), outcome, peakSeverity, stress: outcomeDay.checkIn?.stress, sleep: outcomeDay.checkIn?.sleepHours, complete: exposureDayComplete && outcomeDayComplete }];
     });
     const exposed = observations.filter(row => row.exposed), unexposed = observations.filter(row => !row.exposed);
@@ -160,6 +168,7 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
       id, ingredientId, ingredientName, symptomId, symptomName: symptom.name, symptomKind: symptom.kind,
       window, windowLabel: window === 'same-day' ? 'Later the same day' : 'Following calendar day',
       exposedDays: exposed.length, unexposedDays: unexposed.length, exposedSymptomDays: a, unexposedSymptomDays: c,
+      comparisonDays,
       exposedRate, unexposedRate, riskDifference, interval,
       pValue: completeExposed.length && completeUnexposed.length ? fisherExact(completeA, completeExposed.length - completeA, completeC, completeUnexposed.length - completeC) : 1, adjustedPValue: 1,
       status: enough ? 'exploratory' : 'not-enough-data',

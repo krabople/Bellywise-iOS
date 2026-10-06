@@ -122,6 +122,16 @@ export interface SeverityComparison {
   lowStressDifference?: number;
   restedDifference?: number;
 }
+export type ComparisonExclusionReason = 'following-day-not-finished' | 'missing-following-day' | 'unresolved-food-day' | 'unresolved-feeling-day' | 'feeling-unconfirmed' | 'feeling-before-food-unreviewed' | 'food-day-unfinished' | 'ingredient-unconfirmed';
+export interface PatternComparisonDay {
+  date: string;
+  symptomDate: string;
+  included: boolean;
+  exposed: boolean;
+  symptom: boolean;
+  reasons: ComparisonExclusionReason[];
+}
+
 export interface PatternResult {
   id: string;
   ingredientId: string;
@@ -135,6 +145,8 @@ export interface PatternResult {
   unexposedDays: number;
   exposedSymptomDays: number;
   unexposedSymptomDays: number;
+  /** Exact eligibility decisions behind the occurrence comparison; not saved diary data. */
+  comparisonDays?: PatternComparisonDay[];
   exposedRate: number;
   unexposedRate: number;
   riskDifference: number;
