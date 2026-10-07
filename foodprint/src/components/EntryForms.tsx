@@ -16,7 +16,7 @@ import { resolveFood, suggestFoodNames, ingredientsFromNames, localDateKey, getI
 import type { CustomIngredientDefinition, IngredientExposure, Level, Meal, SymptomDefinition, SymptomLog } from '../domain/types';
 import { expandIngredientNames, parseIngredientLabel } from '../services/labelParser';
 import { isIngredientOcrAvailable, recognizeIngredientImage } from '../services/ocr';
-import { lookupBarcode, searchProducts, refreshSelectedProduct, type CatalogProduct } from '../services/products';
+import { lookupBarcode, searchProducts, type CatalogProduct } from '../services/products';
 import { searchLocalProducts } from '../services/localProducts';
 import { suggestBrands } from '../domain/brands';
 
@@ -131,13 +131,9 @@ export function MealForm({ initial, selectedDay, customIngredients = [], onAddCu
     const limit = localLimit + 12; setLocalLimit(limit);
     setProducts(previous => [...searchLocalProducts(query, { limit, country: productCountry || undefined }).products, ...previous.filter(p => p.sourceLabel === 'Open Food Facts')]);
   };
-  const chooseProduct = async (selected: CatalogProduct) => {
-    const operation = ++currentOperation.current; setBusy(true); setError('');
-    setCatalogSource({ name: selected.name, url: selected.sourceUrl, label: selected.sourceLabel ?? 'Published product record' });
-    let p: CatalogProduct;
-    try { p = await refreshSelectedProduct(selected); }
-    catch (e) { if (operation === currentOperation.current) { setName(selected.name); setMode('barcode'); setBarcodeNeedsLabel(true); setScannerOpen(false); setError(e instanceof Error ? e.message : 'The current ingredient list could not be retrieved. Photograph the list or enter it manually.'); setBusy(false); } return; }
-    if (operation !== currentOperation.current) return;
+  const chooseProduct = async (p: CatalogProduct) => {
+    ++currentOperation.current; setError('');
+    setCatalogSource({ name: p.name, url: p.sourceUrl, label: p.sourceLabel ?? 'Published product record' });
     setBusy(false);
     setProductCode(p.barcode || undefined); setExcludedComponents(p.labels.filter(label => /^(?:gluten|lactose)[ -]free$/i.test(label)).map(label => label.split(/[ -]/)[0].toLowerCase())); setName(p.name); setNotes([p.brands, `Product data: ${p.sourceUrl}`, p.attribution, p.country ? `Market: ${p.country}` : ''].filter(Boolean).join('\n'));
     setLabel(p.ingredientsText || ''); setCatalogProduct(true); setBarcodeNeedsLabel(false); setProducts([]); setScannerOpen(false);

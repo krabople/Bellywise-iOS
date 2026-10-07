@@ -38,6 +38,10 @@ npx expo run:ios
 - Nine sourced educational guides, report export, validated backup restore and diary deletion.
 - Native encrypted SQLite storage with a random key in Keychain; no diary server, advertising or analytics.
 
+## Data sources
+
+Contains information from [Open Food Facts contributors](https://world.openfoodfacts.org/), made available under the [Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/1-0/). Adapted taxonomies and ingredient mappings are freely available as complete JSON downloads, separate from the app software and user diaries. USDA source data are public domain / CC0. See the [data notice](foodprint/src/data/DATA-LICENSES.md) and [public data sources page](https://krabople.github.io/Bellywise-iOS/data-sources.html) for licence details and attribution.
+
 ## Method and limitations
 
 See [`METHOD.md`](foodprint/src/domain/METHOD.md), [`SCANNING.md`](foodprint/docs/SCANNING.md), and [`CLINICAL-SAFETY.md`](foodprint/docs/CLINICAL-SAFETY.md).
@@ -50,9 +54,9 @@ This is an observational wellness diary, **not a clinically validated intoleranc
 - Apple team: `6YYA8L76Y8`
 - Minimum iOS/iPadOS: 16.4
 - Build toolchain: Xcode 26.4+ / SDK 57 / Node 24
-- Source repository: private `krabople/Bellywise-iOS`
+- Source repository: public `krabople/Bellywise-iOS`
 
-The signing workflow template is in [`bellywise-testflight.workflow.yml`](foodprint/docs/bellywise-testflight.workflow.yml). It is designed to run in the existing Lifetwine repository so the owner's existing Apple secrets stay there. A dedicated read-only deploy key allows that runner to check out this private app's source. The workflow registers/reuses this app's bundle and certificate-matched provisioning profile, builds the simulator, archives, and uploads the signed build. It never changes or releases Lifetwine itself.
+The signing workflow template is in [`bellywise-testflight.workflow.yml`](foodprint/docs/bellywise-testflight.workflow.yml). It is designed to run in the existing Lifetwine repository so the owner's existing Apple secrets stay there. A dedicated read-only deploy key allows that runner to check out this app's source. The workflow registers/reuses this app's bundle and certificate-matched provisioning profile, builds the simulator, archives, and uploads the signed build. It never changes or releases Lifetwine itself.
 
 Apple requires creating the new app record through App Store Connect's website. The workflow stops with a useful message if that record is missing. Beta distribution must be verified in TestFlight after upload; a successful source push is not a successful release.
 

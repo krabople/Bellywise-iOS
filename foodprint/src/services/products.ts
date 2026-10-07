@@ -1,7 +1,6 @@
 import { isPackagingText, ingredientPrefix } from '../domain/ingredientTextPolicy';
 import { matchIngredientPhrases } from '../domain/ingredients';
 import { brandInQuery } from '../domain/brands';
-import { parseIngredientLabel } from './labelParser';
 /** Public product records only. Diary entries, symptoms and photographs never enter this API. */
 export interface CatalogProduct {
   id?: string;
@@ -19,7 +18,6 @@ export interface CatalogProduct {
   warnings: string[];
   country?: string;
   sourceLabel?: string;
-  sourceApiUrl?: string;
   ingredientConfidence?: 'confirmed' | 'inferred';
 }
 
@@ -166,42 +164,4 @@ export async function searchProducts(query: string, options: { page?: number; co
   });
 }
 
-/** Manufacturer selections refresh only the public API URL shipped with this menu. */
-export async function refreshSelectedProduct(product: CatalogProduct): Promise<CatalogProduct> {
-  if (!product.sourceApiUrl) return product;
-  const url = new URL(product.sourceApiUrl);
-  if (url.origin !== 'https://www.mcdonalds.com' || url.pathname !== '/dnaapp/itemDetails' || url.searchParams.get('country') !== 'UK') throw new CatalogError('invalid-input', 'Unsupported manufacturer source.');
-  const body = await requestJson(url.toString(), 'McDonald’s UK');
-  if (!body.item || typeof body.item !== 'object') throw new CatalogError('unavailable', 'The manufacturer could not return its current ingredient list. Scan the ingredients or enter them manually.');
-  const item = body.item as Record<string, unknown>;
-  const components = (item.components as { component?: unknown[] } | undefined)?.component;
-  const statements = Array.isArray(components) ? components.flatMap(value => {
-    if (!value || typeof value !== 'object') return [];
-    const component = value as Record<string, unknown>;
-    return component.is_default === 1 && typeof component.ingredient_statement === 'string' ? [component.ingredient_statement.replace(/<br\s*\/?\s*>/gi, '\n')] : [];
-  }) : [];
-  const ingredientsText = statements.map(stringField).filter(Boolean).join('\n');
-  const alternatives = /\beither\b|\bor\s*:/i.test(ingredientsText);
-  // Parse each component separately: a bun's trace warning must not discard the sauce or patty.
-  const parsed = statements.map(statement => parseIngredientLabel(manufacturerIngredientText(statement), { source: 'catalog' }));
-  const ingredientNames = [...new Set(parsed.flatMap(part => part.ingredients))];
-  return { ...product, ingredientsText: ingredientsText || undefined, ingredients: ingredientNames.map(name => ({ id: name, name })),
-    allergens: [...new Set(parsed.flatMap(part => part.allergens))], traces: [...new Set(parsed.flatMap(part => part.mayContain))],
-    ingredientConfidence: alternatives ? 'inferred' : 'confirmed', warnings: [...new Set(['Current published UK ingredient statements from McDonald’s. Check modifications to your order.', ...parsed.flatMap(part => part.warnings), ...(alternatives ? ['Alternative supplier recipes are listed. Possible ingredients remain estimates until you confirm the version you ate.'] : [])])] };
-}
-
 export const productSearchDelay = () => Math.max(0, nextRequestAt.search - Date.now());
-
-/** Manufacturer fields contain accessible UI annotations as well as food text.
- * Cleaning is scoped to the explicit ingredient_statement field, never a menu description. */
-export function manufacturerIngredientText(statement: string): string {
-  const clean = statement.replace(/<span\b[^>]*>\s*(?:Potential\s+)?Allergen Ingredient:\s*<\/span>/gi, '')
-    .replace(/<br\s*\/?\s*>/gi, '\n');
-  const plain = stringField(clean) ?? '';
-  const single = /^\s*100\s*%\s*(?:pure\s+)?([^.,\n]+)\.(?:\s|$)/i.exec(plain);
-  if (single) {
-    const advisory = plain.slice(single[0].length).match(/\b(?:may\s+contain|contains?|for\s+allergens|allergy\s+advice)\b[\s\S]*/i)?.[0];
-    return single[1].trim() + (advisory ? '\n' + advisory : '');
-  }
-  return plain.replace(/\b(?:either|or|ingredients)\s*:/gi, '');
-}

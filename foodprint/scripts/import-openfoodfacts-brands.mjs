@@ -10,5 +10,8 @@ const records = text.split(/\r?\n\s*\r?\n/).flatMap(block => {
   return name ? [{ name, aliases }] : [];
 });
 if (records.length < 1000) throw new Error('Refusing an unexpectedly small taxonomy import.');
-await fs.writeFile('src/data/openFoodFactsBrands.json', JSON.stringify({ source: 'Open Food Facts brands taxonomy (ODbL)', sourceUrl, generatedAt: '2026-10-05', records }) + '\n');
+await fs.writeFile('src/data/openFoodFactsBrands.json', JSON.stringify({ source: 'Open Food Facts brands taxonomy (ODbL)', sourceUrl,
+  license: 'Open Database License (ODbL) 1.0', licenseUrl: 'https://opendatacommons.org/licenses/odbl/1-0/',
+  attribution: 'Contains information from Open Food Facts contributors, available under ODbL 1.0.',
+  generatedAt: new Date().toISOString().slice(0, 10), records }) + '\n');
 console.log(`Imported ${records.length} brand taxonomy names.`);

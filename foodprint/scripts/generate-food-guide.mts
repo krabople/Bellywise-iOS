@@ -31,5 +31,7 @@ const records = source.records.flatMap((food: { name: string; fdcId: number; com
   exclude.forEach(id => ingredients.delete(id));
   return [{ id: `usda-${food.fdcId}`, name: food.name, names: [...aliases].filter(Boolean), ingredients: [...ingredients], sourceUrl: `https://fdc.nal.usda.gov/food-details/${food.fdcId}/nutrients`, incomplete: unmapped > 0 || !ingredients.size, sourceType: food.sourceType }];
 });
-fs.writeFileSync('src/data/extendedFoodGuide.json', JSON.stringify({ source: source.source, license: source.license, records }) + '\n');
+fs.writeFileSync('src/data/extendedFoodGuide.json', JSON.stringify({ source: source.source, sourceLicense: source.license,
+  license: 'Open Database License (ODbL) 1.0', licenseUrl: 'https://opendatacommons.org/licenses/odbl/1-0/',
+  attribution: 'USDA FoodData Central source data (public domain / CC0), with Bellywise ingredient mappings using Open Food Facts contributors’ taxonomy (ODbL 1.0) and curated entries.', records }) + '\n');
 console.log({ foodRecords: records.length, withMappedComponents: records.filter((r: { ingredients: string[] }) => r.ingredients.length).length, aliases: records.reduce((sum: number, r: { names: string[] }) => sum + r.names.length, 0) });

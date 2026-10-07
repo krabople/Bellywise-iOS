@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Bellywise food data sources, Open Food Facts attribution and open database downloads, and USDA FoodData Central licensing.">
+  <meta name="theme-color" content="#f8f7f3">
+  <title>Data sources &amp; licences · Bellywise</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="index.html" aria-label="Bellywise home"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><path d="M7 31C3 15 17 12 32 5c3 17-2 29-17 29M7 35c4-10 11-17 19-23" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>bellywise</span></a>
+    <nav aria-label="Main navigation"><a href="support.html">Support</a><a href="privacy.html">Privacy</a><a href="data-sources.html" aria-current="page">Data sources</a></nav>
+  </header>
+  <main id="main">
+    <p class="eyebrow">Where the information comes from</p>
+    <h1>Data sources &amp; licences</h1>
+    <p class="intro">Bellywise combines openly licensed food information with curated ingredient and recipe guidance. Your private diary is separate from these public databases.</p>
+    <p class="updated">Last updated: 7 October 2026</p>
+    <section class="callout">
+      <h2>Open Food Facts</h2>
+      <p>Contains information from <a href="https://world.openfoodfacts.org/">Open Food Facts contributors</a>, available under the <a href="https://opendatacommons.org/licenses/odbl/1-0/">Open Database License (ODbL) 1.0</a>.</p>
+      <p>Bellywise’s adapted taxonomies and ingredient-mapping database are available free of charge under that same licence. Download the complete machine-readable files, with no app purchase required:</p>
+      <ul>
+        <li><a href="https://raw.githubusercontent.com/krabople/Bellywise-iOS/main/foodprint/src/data/openFoodFactsIngredients.json">Ingredient taxonomy JSON</a> — 4,799 canonical source records and aliases; source revision and licence details are included.</li>
+        <li><a href="https://raw.githubusercontent.com/krabople/Bellywise-iOS/main/foodprint/src/data/openFoodFactsBrands.json">Brand taxonomy JSON</a> — 1,844 source names and aliases.</li>
+        <li><a href="https://raw.githubusercontent.com/krabople/Bellywise-iOS/main/foodprint/src/data/extendedFoodGuide.json">Food guide with ingredient mappings JSON</a> — 12,713 USDA food descriptions with Bellywise mappings using the Open Food Facts taxonomy and curated entries. USDA source descriptions remain public domain / CC0; the adapted mapping database is distributed under ODbL 1.0.</li>
+      </ul>
+    </section>
+    <h2>USDA FoodData Central</h2>
+    <p>USDA source data are <a href="https://fdc.nal.usda.gov/">public domain and published under CC0</a>. Bellywise uses FNDDS 2021–2023 (October 2024), SR Legacy (April 2018), and branded foods (April 2026). Source archive information is retained in the repository.</p>
+    <p>Attribution: U.S. Department of Agriculture, Agricultural Research Service, Beltsville Human Nutrition Research Center. FoodData Central. [Internet]. [cited 7 October 2026]. Available from <a href="https://fdc.nal.usda.gov/">FoodData Central</a>.</p>
+    <ul>
+      <li><a href="https://raw.githubusercontent.com/krabople/Bellywise-iOS/main/foodprint/src/data/usdaFoodDescriptions.json">Raw food descriptions JSON</a>.</li>
+      <li><a href="https://raw.githubusercontent.com/krabople/Bellywise-iOS/main/foodprint/src/data/brandCatalog.json">USDA brand/manufacturer directory JSON</a>.</li>
+      <li><a href="https://raw.githubusercontent.com/krabople/Bellywise-iOS/main/foodprint/src/data/brandedProducts.json">60,000 USDA packaged-product records JSON</a>.</li>
+    </ul>
+    <h2>Online product records</h2>
+    <p>Optional barcode and brand searches request product records from Open Food Facts. Each result shows its attribution, market, product-source link and ingredient limitations. Community records can be incomplete or out of date; check your exact packet. A missing list is not replaced with a guessed recipe.</p>
+    <p>Brand aliases, including restaurant names, help identify a search. They do not imply affiliation, a complete menu, or a verified restaurant recipe. This release does not bundle copied restaurant menu snapshots or request ingredients directly from restaurant services. You can enter verified ingredients yourself.</p>
+    <h2>Curated guidance and your diary</h2>
+    <p>Recipe suggestions are estimates and stay labelled as such until reviewed. Ingredient and educational information link to their sources. Public database licences apply to the data described here, separately from application software and your own privately stored diary entries.</p>
+    <p>For details about online requests and local storage, read the <a href="privacy.html">privacy policy</a>. For questions, contact <a href="mailto:krabople@gmail.com">krabople@gmail.com</a>.</p>
+  </main>
+  <footer class="site-footer">
+    <p>Bellywise is provided by Benjamin David Berger.</p>
+    <p><a href="support.html">Support</a><a href="privacy.html">Privacy policy</a><a href="data-sources.html">Data sources &amp; licences</a></p>
+    <p>Food and symptom patterns are clues to explore, not a medical diagnosis.</p>
+  </footer>
+</body>
+</html>

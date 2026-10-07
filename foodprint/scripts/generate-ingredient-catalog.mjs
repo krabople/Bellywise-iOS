@@ -41,6 +41,9 @@ for (const record of records) {
 const data = {
   source: 'Open Food Facts ingredients taxonomy (ODbL)',
   license: 'Open Database License (ODbL) 1.0 — https://opendatacommons.org/licenses/odbl/1-0/',
+  licenseUrl: 'https://opendatacommons.org/licenses/odbl/1-0/',
+  sourceUrl: `https://github.com/openfoodfacts/openfoodfacts-server/blob/${revision === 'unknown' ? 'main' : revision}/taxonomies/ingredients.txt`,
+  attribution: 'Contains information from Open Food Facts contributors, available under ODbL 1.0.',
   revision,
   generatedAt: new Date().toISOString().slice(0, 10),
   records: [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'en')),

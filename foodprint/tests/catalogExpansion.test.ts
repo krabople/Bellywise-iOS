@@ -4,16 +4,20 @@ import { addedFoodRecordCount, resolveFood, suggestFoodNames } from '../src/doma
 import { resolveIngredientEntry } from '../src/domain/ingredientEntry';
 import { brandCatalogSize, findBrand, suggestBrands } from '../src/domain/brands';
 import { localProductCount, searchLocalProducts } from '../src/services/localProducts';
-import { CatalogError, lookupBarcode, refreshSelectedProduct, searchProducts, manufacturerIngredientText } from '../src/services/products';
+import { CatalogError, lookupBarcode, normalizeCatalogProduct, searchProducts } from '../src/services/products';
 import { parseIngredientLabel } from '../src/services/labelParser';
 import guide from '../src/data/extendedFoodGuide.json';
+import offBrands from '../src/data/openFoodFactsBrands.json';
+import offIngredients from '../src/data/openFoodFactsIngredients.json';
 
 test('thousands of distinct source foods and real brand/product records are available', () => {
   assert.equal(addedFoodRecordCount, 12713);
   assert.equal(new Set(guide.records.map(row => row.id)).size, addedFoodRecordCount);
   assert.ok(guide.records.every(row => row.sourceUrl.startsWith('https://fdc.nal.usda.gov/food-details/')));
   assert.ok(brandCatalogSize >= 37000);
-  assert.equal(localProductCount, 60486);
+  assert.equal(localProductCount, 60000);
+  for (const dataset of [guide, offBrands, offIngredients]) assert.equal(dataset.licenseUrl, 'https://opendatacommons.org/licenses/odbl/1-0/');
+  assert.equal(guide.sourceLicense, 'Public domain / CC0');
 });
 
 test('requested foods work in both the meal field and ingredient picker, with estimates retained', () => {
@@ -37,30 +41,31 @@ test('spelling matches keep free-from context and do not invent unknown meals', 
   assert.equal(resolveFood('quuxalicious unknown dish').matched, false);
 });
 
-test('UK restaurant aliases resolve to their correct, distinct official menus', () => {
-  for (const name of ["McDonald's", 'McDonalds', 'mc donalds']) {
-    const result = searchLocalProducts(name, { country: 'United Kingdom', limit: 200 });
-    assert.equal(result.total, 136);
-    assert.ok(result.products.every(row => row.brands === "McDonald's" && row.sourceUrl.startsWith('https://www.mcdonalds.com/gb/')));
-    assert.ok(result.products.some(row => row.name === 'Big Mac'));
+test('restaurant identification aliases remain available without claiming copied UK menus', () => {
+  for (const name of ["McDonald's", 'McDonalds', 'mc donalds', 'Maccies']) {
+    assert.equal(findBrand(name)?.name, "McDonald's");
+    assert.equal(searchLocalProducts(name, { country: 'United Kingdom' }).total, 0);
   }
-  for (const name of ['KFC', 'Kentucky fried chicken']) assert.equal(searchLocalProducts(name, { country: 'United Kingdom' }).total, 137);
-  for (const name of ['Burger King', 'burgerking', 'BK']) assert.equal(searchLocalProducts(name, { country: 'United Kingdom' }).total, 213);
-  assert.equal(searchLocalProducts('KFC Zinger', { country: 'United Kingdom', limit: 100 }).products.every(row => /zinger/i.test(row.name)), true);
-  assert.ok(searchLocalProducts('Burger King Whopper', { country: 'United Kingdom', limit: 100 }).total > 5);
-  assert.equal(findBrand('Maccies')?.name, "McDonald's");
+  for (const name of ['KFC', 'Kentucky fried chicken']) {
+    assert.equal(findBrand(name)?.name, 'KFC');
+    assert.equal(searchLocalProducts(name, { country: 'United Kingdom' }).total, 0);
+  }
+  for (const name of ['Burger King', 'burgerking', 'BK']) {
+    assert.equal(findBrand(name)?.name, 'Burger King');
+    assert.equal(searchLocalProducts(name, { country: 'United Kingdom' }).total, 0);
+  }
+  assert.equal(findBrand('McDonalds')?.productsInSource, 1); // Existing licensed USDA source directory count.
+  assert.equal(findBrand('KFC')?.productsInSource, 0);
+  assert.equal(findBrand('Burger King')?.productsInSource, 0);
   assert.equal(suggestBrands('burger ki')[0].name, 'Burger King');
   assert.equal(suggestBrands('dolmoi')[0].name, 'Dolmio');
 });
 
-test('restaurant names without a full published list never acquire recipe assumptions', async () => {
-  for (const brand of ['KFC', 'Burger King']) {
-    const product = searchLocalProducts(brand, { country: 'United Kingdom' }).products[0];
-    const result = await refreshSelectedProduct(product);
-    assert.equal(result.ingredientsText, undefined);
-    assert.deepEqual(result.ingredients, []);
-    assert.ok(result.warnings.some(w => /complete ingredients list is not published/.test(w)));
-  }
+test('restaurant records without a published ingredient list never acquire recipe assumptions', () => {
+  const result = normalizeCatalogProduct({ code: '12345678', product_name: 'Chicken burger', brands: 'KFC', allergens_tags: ['en:wheat', 'en:milk'] })!;
+  assert.equal(result.ingredientsText, undefined);
+  assert.deepEqual(result.ingredients, []);
+  assert.ok(result.warnings.some(w => /no ingredient list/.test(w)));
 });
 
 test('US records are explicitly separated from UK results, have published lists, and paginate locally', () => {
@@ -68,40 +73,8 @@ test('US records are explicitly separated from UK results, have published lists,
   assert.ok(result.total > 0);
   assert.ok(result.products.every(row => row.country === 'United States' && row.ingredientsText && row.sourceLabel === 'USDA'));
   assert.equal(searchLocalProducts('Kellogg', { country: 'United Kingdom' }).total, 0);
-  assert.equal(searchLocalProducts('McDonalds', { limit: 12 }).products.length, 12);
-  assert.equal(searchLocalProducts('McDonalds', { limit: 24 }).products.length, 24);
-});
-
-test('manufacturer refresh parses every actual component despite intermediate trace warnings', async () => {
-  const original = globalThis.fetch;
-  const product = searchLocalProducts('McDonalds Big Mac', { country: 'United Kingdom' }).products[0];
-  let requested = '';
-  try {
-    globalThis.fetch = async input => { requested = String(input); return new Response(JSON.stringify({ item: { components: { component: [
-      { is_default: 1, ingredient_statement: 'Wheat flour, water, yeast. May contain sesame.' },
-      { is_default: 1, ingredient_statement: 'Beef, salt.' },
-      { is_default: 1, ingredient_statement: 'Either: milk, mustard OR: egg, mustard.' },
-      { is_default: 1, ingredient_statement: '100% Onion.' },
-      { is_default: 1, ingredient_statement: '100% Iceberg Lettuce.' },
-      { is_default: 1, ingredient_statement: 'Water, rapeseed oil, <span class="offscreen">Allergen Ingredient: </span> Free Range <strong>EGG</strong> Yolk, Spices (contain <span class="offscreen">Allergen Ingredient: </span><strong>MUSTARD</strong>), salt.' },
-      { is_default: 0, ingredient_statement: 'Peanuts, honey.' },
-    ] } } })); };
-    const refreshed = await refreshSelectedProduct(product);
-    assert.ok(requested.startsWith('https://www.mcdonalds.com/dnaapp/itemDetails?country=UK'));
-    assert.equal(refreshed.ingredientConfidence, 'inferred');
-    for (const ingredient of ['Wheat', 'Beef', 'Salt', 'Mustard', 'Onion', 'iceberg lettuce', 'free range egg yolk']) assert.ok(refreshed.ingredients.some(row => row.name === ingredient), ingredient);
-    assert.ok(!refreshed.ingredients.some(row => /peanut|honey|sesame/i.test(row.name)));
-    assert.ok(refreshed.traces.includes('sesame'));
-  } finally { globalThis.fetch = original; }
-});
-
-test('manufacturer ingredient fields retain single foods and all supplier alternatives without reading marketing as ingredients', () => {
-  assert.equal(manufacturerIngredientText('100% Pure Beef.<br/>No additives, fillers or binders.'), 'Beef');
-  const single = parseIngredientLabel(manufacturerIngredientText('100% Onion. May contain sesame.'), { source: 'catalog' });
-  assert.deepEqual(single.ingredients, ['Onion']); assert.deepEqual(single.mayContain, ['sesame']);
-  const alternatives = manufacturerIngredientText('EITHER: rice, sesame. OR: Ingredients: wheat, soy.');
-  for (const name of ['Rice', 'Sesame', 'Wheat', 'Soy']) assert.ok(parseIngredientLabel(alternatives, { source: 'catalog' }).ingredients.includes(name), name);
-  assert.deepEqual(parseIngredientLabel('Ingredients: 100% onion.', { source: 'catalog' }).ingredients, ['Onion']);
+  assert.equal(searchLocalProducts('shredded', { country: 'United States', limit: 12 }).products.length, 12);
+  assert.equal(searchLocalProducts('shredded', { country: 'United States', limit: 24 }).products.length, 24);
 });
 
 test('remote searches use the actual brand filter, selected country and requested page; offline barcodes offer label scanning', async () => {
@@ -110,13 +83,18 @@ test('remote searches use the actual brand filter, selected country and requeste
   Date.now = () => now;
   try {
     globalThis.fetch = async input => { requested = String(input); return new Response(JSON.stringify({ products: [] })); };
-    await searchProducts('Burger King Whopper', { page: 2, country: 'United Kingdom' });
-    const url = new URL(requested);
-    assert.equal(url.searchParams.get('search_terms'), 'whopper');
-    assert.equal(url.searchParams.get('tag_0'), 'burger-king');
-    assert.equal(url.searchParams.get('tag_1'), 'united-kingdom');
-    assert.equal(url.searchParams.get('page'), '2');
-    assert.equal(url.searchParams.get('page_size'), '50');
+    for (const [query, term, brand] of [["McDonald's Big Mac", 'big mac', 'mcdonalds'], ['Kentucky fried chicken Zinger', 'zinger', 'kfc'], ['BK Whopper', 'whopper', 'burger-king']]) {
+      await searchProducts(query, { page: 2, country: 'United Kingdom' });
+      const url = new URL(requested);
+      assert.equal(url.origin, 'https://world.openfoodfacts.org');
+      assert.equal(url.pathname, '/cgi/search.pl');
+      assert.equal(url.searchParams.get('search_terms'), term);
+      assert.equal(url.searchParams.get('tag_0'), brand);
+      assert.equal(url.searchParams.get('tag_1'), 'united-kingdom');
+      assert.equal(url.searchParams.get('page'), '2');
+      assert.equal(url.searchParams.get('page_size'), '50');
+      now += 10000;
+    }
     now += 10000;
     globalThis.fetch = async () => { throw new TypeError('offline'); };
     await assert.rejects(lookupBarcode('87654321'), error => error instanceof CatalogError && error.code === 'network' && /Photograph the ingredients list/.test(error.message));

@@ -1,14 +1,14 @@
 import usda from '../data/brandCatalog.json';
 import off from '../data/openFoodFactsBrands.json';
-import burgerking from '../data/burgerkingUkProducts.json';
 import { normalizeIngredientText } from './ingredients';
 import { spellingDistance } from './catalogMatching';
 
 export interface BrandRecord { key: string; name: string; aliases: string[]; productsInSource: number }
 const curated: BrandRecord[] = [
-  { key: 'mcdonalds', name: "McDonald's", aliases: ['mc donalds', 'mc donald s', 'mcdonald', 'maccies'], productsInSource: 136 },
-  { key: 'kfc', name: 'KFC', aliases: ['kentucky fried chicken', 'k f c'], productsInSource: 137 },
-  { key: 'burger king', name: 'Burger King', aliases: ['burgerking', 'bk'], productsInSource: burgerking.records.length },
+  // Identification aliases only. Product counts come from licensed source data below.
+  { key: 'mcdonalds', name: "McDonald's", aliases: ['mc donalds', 'mc donald s', 'mcdonald', 'maccies'], productsInSource: 0 },
+  { key: 'kfc', name: 'KFC', aliases: ['kentucky fried chicken', 'k f c'], productsInSource: 0 },
+  { key: 'burger king', name: 'Burger King', aliases: ['burgerking', 'bk'], productsInSource: 0 },
   ...['Dolmio', 'Tesco', "Sainsbury's", 'Morrisons', 'Waitrose', 'Asda', 'Aldi', 'Lidl', 'Alpro', 'Bisto', 'Quorn', 'Linda McCartney', 'Greggs', 'KFC', "Nando's", 'Heinz', 'Cadbury', 'Nestlé', "Kellogg's", 'Weetabix', 'Hovis', 'Warburtons', 'Walkers', 'Birds Eye', 'Young’s', 'Innocent', 'Oatly', 'Violife'].map(name => ({ key: normalizeIngredientText(name), name, aliases: [], productsInSource: 0 })),
 ];
 const records = new Map<string, BrandRecord>();
