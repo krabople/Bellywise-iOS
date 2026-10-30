@@ -34,7 +34,7 @@ export function AppTutorial({ replay = false, onFinish }: { replay?: boolean; on
   const [step, setStep] = useState(0);
   const [foodMethod, setFoodMethod] = useState(0);
   const [ingredientOpen, setIngredientOpen] = useState(false);
-  const [garlicConfirmed, setGarlicConfirmed] = useState(false);
+  const [garlicConfirmed, setGarlicConfirmed] = useState(true);
   const [garlicRemoved, setGarlicRemoved] = useState(false);
   const [positive, setPositive] = useState(false);
   const [feeling, setFeeling] = useState('');
@@ -98,12 +98,12 @@ export function AppTutorial({ replay = false, onFinish }: { replay?: boolean; on
 
           {step === 2 && <>
             <T>Each ingredient can contribute to a pattern. Check the list before saving: remove anything you didn’t have and add anything missing.</T>
-            <Practice prompt="Tap an ingredient name, then try confirming or removing garlic.">
+            <Practice prompt="Tap an ingredient name, then try unconfirming or removing garlic.">
               <View style={{ borderBottomWidth: 1, borderColor: C.line, paddingBottom: 8 }}><Pressable accessibilityRole="button" accessibilityLabel="About tomato in this example" accessibilityState={{ expanded: ingredientOpen }} onPress={() => setIngredientOpen(!ingredientOpen)} style={{ minHeight: 44, justifyContent: 'center' }}><T style={styles.ingredient}>Tomato</T><T muted style={{ fontSize: 11 }}>Confirmed · Tap for details</T></Pressable></View>
               {ingredientOpen && <Notice>Ingredient details explain what it is, where it’s found, and known symptoms and context, with sources where available. You can open these details from ingredient names in your journal.</Notice>}
               {!garlicRemoved ? <Row style={{ gap: 4 }}><View style={{ flex: 1 }}><T>Garlic</T><T muted style={{ fontSize: 11 }}>{garlicConfirmed ? 'Confirmed ingredient' : 'Suggested · not yet confirmed'}</T></View><Button label={garlicConfirmed ? 'Unconfirm' : 'Confirm'} variant="ghost" onPress={() => setGarlicConfirmed(!garlicConfirmed)} style={{ paddingHorizontal: 10 }} /><IconButton icon={X} label="Remove garlic from example" onPress={() => setGarlicRemoved(true)} /></Row> : <Row style={{ justifyContent: 'space-between' }}><T muted style={{ fontSize: 12 }}>Garlic removed from the example.</T><Button label="Undo" variant="ghost" onPress={() => setGarlicRemoved(false)} /></Row>}
             </Practice>
-            <Notice>Ingredients from a label or product lookup start confirmed. Recipe suggestions are estimates: only confirm the ones you know you ate. You can unconfirm an uncertain item.</Notice>
+            <Notice>Ingredients from labels, product lookups and recognised meal names start confirmed. Meal-name ingredients use a typical recipe, so check the list: remove anything you didn’t have, add anything missing, or unconfirm an uncertain item.</Notice>
             <Tip icon={Search} title="Be specific when you type">Use details such as “gluten-free” or “lactose-free”. If an ingredient isn’t recognised, check the close matches before adding your own.</Tip>
           </>}
 
