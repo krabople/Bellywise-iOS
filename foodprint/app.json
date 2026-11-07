@@ -2,7 +2,7 @@
   "expo": {
     "name": "Bellywise",
     "slug": "bellywise",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "scheme": "bellywise",
     "orientation": "default",
     "icon": "./assets/icon.png",
