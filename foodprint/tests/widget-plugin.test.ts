@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { LOCALES } from '../src/i18n/locales';
 const require = createRequire(import.meta.url);
 const xcode = require('xcode');
 const { addWidgetTarget } = require('../plugins/with-quick-log-widget');
@@ -15,7 +16,7 @@ test('widget target is embedded, independently configured and safe to regenerate
     PBXFileReference: {}, PBXBuildFile: {}, XCBuildConfiguration: {}, XCConfigurationList: {},
     PBXSourcesBuildPhase: {}, PBXFrameworksBuildPhase: {}, PBXResourcesBuildPhase: {}, PBXCopyFilesBuildPhase: {}, PBXTargetDependency: {}, PBXContainerItemProxy: {},
   } } };
-  const config = { version: '1.0.0', ios: { bundleIdentifier: 'com.krabople.bellywise', appleTeamId: '6YYA8L76Y8', buildNumber: '25' } };
+  const config = { version: '1.0.0', ios: { bundleIdentifier: 'com.krabople.bellywise', appleTeamId: '6YYA8L76Y8', buildNumber: '25', infoPlist: { CFBundleLocalizations: LOCALES.map(([locale]) => locale) } } };
   addWidgetTarget(project, config);
   const output = project.writeSync();
   assert.match(output, /com\.krabople\.bellywise\.quicklog/);
@@ -23,6 +24,10 @@ test('widget target is embedded, independently configured and safe to regenerate
   assert.match(output, /dstSubfolderSpec = 13/); // PlugIns destination
   assert.match(output, /CURRENT_PROJECT_VERSION = 25/);
   assert.doesNotMatch(output, /undefined/);
+  const resources = Object.values(project.hash.project.objects.PBXResourcesBuildPhase).filter((value: any) => typeof value === 'object') as {files: unknown[]}[];
+  assert.equal(resources.length,1);
+  assert.equal(resources[0].files.length,LOCALES.length);
+  for(const [locale] of LOCALES) assert.ok(output.includes(`${locale}.lproj`),`${locale} widget resources must be bundled`);
   const main = project.pbxNativeTargetSection()[app];
   assert.equal(main.dependencies.length, 1);
   assert.equal(main.buildPhases.length, 1); // Embed extension

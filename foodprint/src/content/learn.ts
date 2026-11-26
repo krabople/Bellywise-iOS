@@ -16,7 +16,7 @@ export const SAFETY_NOTICES = {
   general:
     'Bellywise helps you record and explore patterns. It cannot diagnose an intolerance, allergy or other condition. Discuss persistent symptoms and dietary changes with a qualified clinician.',
   urgentAllergy:
-    'Trouble breathing, sudden swelling of the mouth or throat, or fainting after food may be an emergency. Call your local emergency number now (999 in the UK). Use your prescribed adrenaline auto-injector as directed. Do not wait for this app.',
+    'Trouble breathing, sudden swelling of the mouth or throat, or fainting after food may be an emergency. Call your local emergency number now. Use your prescribed adrenaline auto-injector as directed. Do not wait for this app.',
   gastrointestinalRedFlags:
     'Seek urgent medical advice for blood in your stool, unexplained weight loss or a new hard swelling in your abdomen. Sudden severe abdominal pain or vomiting blood needs emergency care.',
   glutenTesting:

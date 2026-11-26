@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "扫描产品条形码并拍摄成分列表，以便 Bellywise 帮助您记录食物和饮料。",
+    "NSPhotoLibraryUsageDescription": "选择一张成分标签照片以在此设备上私下阅读。"
+  }
+}

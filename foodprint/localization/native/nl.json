@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Scan barcodes van producten en fotografeer ingrediëntenlijsten, zodat Bellywise u kan helpen bij het registreren van eten en drinken.",
+    "NSPhotoLibraryUsageDescription": "Kies een foto met het ingrediëntenlabel om privé op dit apparaat te lezen."
+  }
+}

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import products from '../data/brandedProducts.json';
 import { brandInQuery } from '../domain/brands';
 import { normalizeIngredientText } from '../domain/ingredients';
@@ -6,7 +7,7 @@ import type { CatalogProduct } from './products';
 
 const rows: CatalogProduct[] = [
   ...products.records.map(row => ({ ...row, id: `usda-${row.fdcId}`, ingredients: [], allergens: [], traces: [], labels: [], sourceLabel: 'USDA', sourceUrl: `https://fdc.nal.usda.gov/food-details/${row.fdcId}/nutrients`, attribution: 'Published label data: USDA FoodData Central · public domain',
-    warnings: [`Label record for ${row.country}, last updated ${row.updatedAt}. Recipes can differ by country and change over time. Check the exact packet.`] })),
+    warnings: [t("Label record for {0}, last updated {1}. Recipes can differ by country and change over time. Check the exact packet.", [row.country, row.updatedAt])] })),
 ];
 export const localProductCount = rows.length;
 const indexed = rows.map(product => ({ product, name: normalizeIngredientText(product.name), brand: normalizeIngredientText(product.brands ?? '') }));

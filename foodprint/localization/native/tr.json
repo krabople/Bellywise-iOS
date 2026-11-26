@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Bellywise'ın yiyecek ve içeceklerin kaydını tutmanıza yardımcı olabilmesi için ürün barkodlarını tarayın ve içerik listelerinin fotoğraflarını çekin.",
+    "NSPhotoLibraryUsageDescription": "Bu cihazda özel olarak okumak için bir içerik etiketi fotoğrafı seçin."
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Olvassa be a termékek vonalkódjait és fényképezzen az összetevők listáját, így a Bellywise segíthet az ételek és italok naplózásában.",
+    "NSPhotoLibraryUsageDescription": "Válasszon ki egy összetevő-címkés fotót, amelyet privát módon szeretne elolvasni ezen az eszközön."
+  }
+}

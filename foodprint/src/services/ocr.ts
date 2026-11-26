@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { getLocale } from '../i18n';
 import FoodprintVision, { type IngredientOcrResult } from '../../modules/foodprint-vision';
 
 export type { IngredientOcrResult, RecognizedTextBlock } from '../../modules/foodprint-vision';
@@ -13,5 +14,5 @@ export async function recognizeIngredientImage(uri: string): Promise<IngredientO
     throw new Error('Camera text recognition is available in the Bellywise iOS app. For this preview, paste or type the ingredient list.');
   }
   if (!uri.startsWith('file://')) throw new Error('Select a local camera or photo-library image.');
-  return FoodprintVision.recognizeText(uri);
+  return FoodprintVision.recognizeText(uri, [getLocale(), 'en-GB', 'en-US']);
 }

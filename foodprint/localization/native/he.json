@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "סרוק ברקודים של מוצרים וצלם רשימות מרכיבים כדי ש-Bellywise תוכל לעזור לך לרשום מזון ומשקאות.",
+    "NSPhotoLibraryUsageDescription": "בחר תמונה עם תווית מרכיב לקריאה פרטית במכשיר זה."
+  }
+}

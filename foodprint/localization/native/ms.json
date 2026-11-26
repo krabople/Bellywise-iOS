@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Imbas kod bar produk dan gambar senarai ramuan supaya Bellywise boleh membantu anda mencatat makanan dan minuman.",
+    "NSPhotoLibraryUsageDescription": "Pilih foto label ramuan untuk dibaca secara tertutup pada peranti ini."
+  }
+}

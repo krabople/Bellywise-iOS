@@ -1,0 +1,225 @@
+{
+  "ar": {
+    "Patterns": "الارتباطات",
+    "My patterns": "الارتباطات المحتملة",
+    "Journal": "اليوميات",
+    "My journal": "يومياتي",
+    "Your journal": "يومياتك",
+    "Bellywise on your Home Screen": "Bellywise على شاشتك الرئيسية"
+  },
+  "bn": {
+    "Patterns": "সম্পর্ক",
+    "My patterns": "সম্ভাব্য সম্পর্ক"
+  },
+  "ca": {
+    "Patterns": "Relacions",
+    "My patterns": "Possibles relacions"
+  },
+  "zh-Hans": {
+    "Patterns": "关联",
+    "My patterns": "可能的关联"
+  },
+  "zh-Hant": {
+    "Patterns": "關聯",
+    "My patterns": "可能的關聯"
+  },
+  "hr": {
+    "Patterns": "Povezanosti",
+    "My patterns": "Moguće povezanosti"
+  },
+  "cs": {
+    "Patterns": "Souvislosti",
+    "My patterns": "Možné souvislosti"
+  },
+  "da": {
+    "Patterns": "Sammenhænge",
+    "My patterns": "Mulige sammenhænge"
+  },
+  "nl": {
+    "Patterns": "Verbanden",
+    "My patterns": "Mogelijke verbanden"
+  },
+  "fi": {
+    "Patterns": "Yhteydet",
+    "My patterns": "Mahdolliset yhteydet"
+  },
+  "fr": {
+    "Patterns": "Liens",
+    "My patterns": "Liens possibles",
+    "Replay tutorial": "Revoir le tutoriel",
+    "Try an example diary": "Essayer un journal d’exemple",
+    "Your space": "Votre espace",
+    "My space": "Mon espace",
+    "Feelings": "Ressentis",
+    "Log a feeling": "Noter un ressenti",
+    "Review day": "Bilan du jour",
+    "Save daily review": "Enregistrer le bilan",
+    "Delete my diary": "Supprimer mon journal",
+    "How was your day?": "Comment s’est passée votre journée ?",
+    "feelings": "ressentis",
+    "Getting to know your patterns": "Mieux comprendre vos liens",
+    "A pattern is a starting point": "Un lien est un point de départ",
+    "Understand your patterns": "Comprendre vos liens",
+    "App Store subtitle": "Aliments, symptômes et liens"
+  },
+  "fr-CA": {
+    "Patterns": "Liens",
+    "My patterns": "Liens possibles",
+    "Replay tutorial": "Revoir le tutoriel",
+    "Feelings": "Ressentis",
+    "Log a feeling": "Noter un ressenti",
+    "Review day": "Bilan du jour",
+    "Save daily review": "Enregistrer le bilan",
+    "Delete my diary": "Supprimer mon journal",
+    "How was your day?": "Comment s’est passée votre journée ?",
+    "feelings": "ressentis",
+    "Getting to know your patterns": "Mieux comprendre vos liens",
+    "A pattern is a starting point": "Un lien est un point de départ",
+    "Understand your patterns": "Comprendre vos liens",
+    "App Store subtitle": "Aliments, symptômes et liens"
+  },
+  "de": {
+    "Patterns": "Zusammenhänge",
+    "My patterns": "Mögliche Zusammenhänge"
+  },
+  "el": {
+    "Patterns": "Συσχετίσεις",
+    "My patterns": "Πιθανές συσχετίσεις"
+  },
+  "gu": {
+    "Patterns": "સંબંધો",
+    "My patterns": "સંભવિત સંબંધો"
+  },
+  "he": {
+    "Patterns": "קשרים",
+    "My patterns": "קשרים אפשריים"
+  },
+  "hi": {
+    "Patterns": "संबंध",
+    "My patterns": "संभावित संबंध"
+  },
+  "hu": {
+    "Patterns": "Összefüggések",
+    "My patterns": "Lehetséges összefüggések"
+  },
+  "id": {
+    "Patterns": "Keterkaitan",
+    "My patterns": "Kemungkinan keterkaitan"
+  },
+  "it": {
+    "Patterns": "Collegamenti",
+    "My patterns": "Possibili collegamenti"
+  },
+  "ja": {
+    "Patterns": "関連",
+    "My patterns": "考えられる関連"
+  },
+  "kn": {
+    "Patterns": "ಸಂಬಂಧಗಳು",
+    "My patterns": "ಸಂಭಾವ್ಯ ಸಂಬಂಧಗಳು"
+  },
+  "ko": {
+    "Patterns": "연관성",
+    "My patterns": "가능한 연관성"
+  },
+  "ms": {
+    "Patterns": "Perkaitan",
+    "My patterns": "Kemungkinan perkaitan"
+  },
+  "ml": {
+    "Patterns": "ബന്ധങ്ങൾ",
+    "My patterns": "സാധ്യമായ ബന്ധങ്ങൾ"
+  },
+  "mr": {
+    "Patterns": "संबंध",
+    "My patterns": "संभाव्य संबंध"
+  },
+  "nb": {
+    "Patterns": "Sammenhenger",
+    "My patterns": "Mulige sammenhenger"
+  },
+  "or": {
+    "Patterns": "ସମ୍ପର୍କ",
+    "My patterns": "ସମ୍ଭାବ୍ୟ ସମ୍ପର୍କ",
+    "Add again to {0}": "{0} ରେ ପୁଣି ଯୋଡ଼ନ୍ତୁ",
+    "Also checked in patterns: {0} (derived from {1}). This is a component estimate, not an extra word from the label.": "ସମ୍ପର୍କ ଖୋଜିବାବେଳେ ଏହା ମଧ୍ୟ ଯାଞ୍ଚ କରାଯାଏ: {0} ({1} ରୁ ଉତ୍ପନ୍ନ)। ଏହା ଏକ ଉପାଦାନର ଆନୁମାନିକ ଉପସ୍ଥିତି, ଲେବେଲରେ ଥିବା ଅତିରିକ୍ତ ଶବ୍ଦ ନୁହେଁ।",
+    "Looking only at how often it occurred, your diary currently shows {0} {1} percentage points {2} often on days linked with {3}.": "କେବଳ କେତେଥର ଲକ୍ଷଣ ଦେଖାଦେଇଛି ତାହାକୁ ଦେଖିଲେ, ଆପଣଙ୍କ ଡାଏରିରେ ବର୍ତ୍ତମାନ {3} ସହ ସମ୍ପର୍କିତ ଦିନଗୁଡ଼ିକରେ {0} ର ହାର {1} ପ୍ରତିଶତ ପଏଣ୍ଟ {2} ଦେଖାଯାଉଛି।"
+  },
+  "pl": {
+    "Patterns": "Powiązania",
+    "My patterns": "Możliwe powiązania"
+  },
+  "pt-BR": {
+    "Patterns": "Relações",
+    "My patterns": "Possíveis relações",
+    "App Store subtitle": "Alimentos e sintomas"
+  },
+  "pt-PT": {
+    "Patterns": "Relações",
+    "My patterns": "Possíveis relações",
+    "App Store subtitle": "Alimentos e sintomas"
+  },
+  "pa": {
+    "Patterns": "ਸੰਬੰਧ",
+    "My patterns": "ਸੰਭਾਵੀ ਸੰਬੰਧ"
+  },
+  "ro": {
+    "Patterns": "Corelații",
+    "My patterns": "Corelații posibile"
+  },
+  "ru": {
+    "Patterns": "Связи",
+    "My patterns": "Возможные связи"
+  },
+  "sk": {
+    "Patterns": "Súvislosti",
+    "My patterns": "Možné súvislosti"
+  },
+  "sl": {
+    "Patterns": "Povezave",
+    "My patterns": "Možne povezave"
+  },
+  "es-MX": {
+    "Patterns": "Relaciones",
+    "My patterns": "Posibles relaciones",
+    "App Store subtitle": "Alimentos, síntomas y vínculos"
+  },
+  "es-ES": {
+    "Patterns": "Relaciones",
+    "My patterns": "Posibles relaciones",
+    "App Store subtitle": "Alimentos, síntomas y vínculos"
+  },
+  "sv": {
+    "Patterns": "Samband",
+    "My patterns": "Möjliga samband"
+  },
+  "ta": {
+    "Patterns": "தொடர்புகள்",
+    "My patterns": "சாத்தியமான தொடர்புகள்",
+    "App Store subtitle": "உணவும் அறிகுறிகளும்"
+  },
+  "te": {
+    "Patterns": "సంబంధాలు",
+    "My patterns": "సాధ్యమైన సంబంధాలు"
+  },
+  "th": {
+    "Patterns": "ความสัมพันธ์",
+    "My patterns": "ความสัมพันธ์ที่เป็นไปได้"
+  },
+  "tr": {
+    "Patterns": "Bağlantılar",
+    "My patterns": "Olası bağlantılar"
+  },
+  "uk": {
+    "Patterns": "Зв’язки",
+    "My patterns": "Можливі зв’язки"
+  },
+  "ur": {
+    "Patterns": "تعلقات",
+    "My patterns": "ممکنہ تعلقات"
+  },
+  "vi": {
+    "Patterns": "Mối liên hệ",
+    "My patterns": "Mối liên hệ có thể có"
+  }
+}

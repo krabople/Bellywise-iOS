@@ -1,6 +1,8 @@
+import { t } from '../i18n';
 import { ingredientPrefix, isPackagingText } from '../domain/ingredientTextPolicy';
+import { canonicalLabelContext } from '../i18n/labelContext';
 /** A deliberately conservative English-label parser. Every result needs human review. */
-import { matchIngredientPhrases, type IngredientRecord } from '../domain/ingredients';
+import { matchIngredientPhrases, labelIngredientName, type IngredientRecord } from '../domain/ingredients';
 
 export type LabelSource = 'ocr' | 'manual' | 'catalog';
 
@@ -43,7 +45,7 @@ export function splitIngredientList(text: string): string[] {
   for (let i = 0; i < text.length; i += 1) {
     if ('([{'.includes(text[i])) depth += 1;
     if (')]}'.includes(text[i])) depth = Math.max(0, depth - 1);
-    if (depth === 0 && /[,;•·]/.test(text[i])) {
+    if (depth === 0 && /[,;•·、，；،]/.test(text[i])) {
       const token = cleanToken(text.slice(start, i));
       if (token) tokens.push(token);
       start = i + 1;
@@ -150,7 +152,7 @@ function splitAllergens(value: string): string[] {
 }
 
 export function parseIngredientLabel(text: string, options: IngredientLabelOptions = {}): IngredientLabelResult {
-  const normalized = normalizeText(text);
+  const normalized = normalizeText(canonicalLabelContext(text));
   const header = HEADER.exec(normalized);
   const confidence = typeof options.ocrConfidence === 'number' && Number.isFinite(options.ocrConfidence)
     ? Math.max(0, Math.min(1, options.ocrConfidence)) : undefined;
@@ -190,7 +192,7 @@ export function parseIngredientLabel(text: string, options: IngredientLabelOptio
       runs[runs.length - 1].matched.push(...line.matched);
     }
     const best = runs.filter(run => run.matched.length >= 2).sort((a, b) => b.matched.length - a.matched.length)[0];
-    result.ingredients = best ? [...new Map(best.matched.map(record => [record.id, record.name])).values()] : [];
+    result.ingredients = best ? [...new Set(best.candidates.flatMap(candidate => matchIngredientPhrases(candidate, custom).map(record => labelIngredientName(record, candidate))))] : [];
     result.unrecognized = best ? best.candidates.filter(candidate => matchIngredientPhrases(candidate, custom).length === 0) : [];
     if (result.ingredients.length < 2) {
       result.status = 'needs-manual-selection';
@@ -205,7 +207,7 @@ export function parseIngredientLabel(text: string, options: IngredientLabelOptio
     for (const candidate of rawCandidates) {
       const expanded = expandIngredientNames([candidate]);
       const matches = expanded.flatMap(item => matchIngredientPhrases(item, custom));
-      if (matches.length) recognized.push(...matches.map(match => match.id === 'milk' && /\blactose[ -]free\s+milk\b/i.test(candidate) ? 'lactose-free milk' : match.name));
+      if (matches.length) recognized.push(...matches.map(match => labelIngredientName(match, candidate)));
       else result.unrecognized.push(candidate);
     }
     result.ingredients = [...new Set(recognized)];
@@ -228,7 +230,7 @@ export function parseIngredientLabel(text: string, options: IngredientLabelOptio
     result.warnings.push('“May contain” describes possible cross-contact, not a confirmed ingredient. It is kept separate.');
   }
   if (result.unrecognized.length) {
-    result.warnings.push(`${result.unrecognized.length} text ${result.unrecognized.length === 1 ? 'item was' : 'items were'} not recognised as ingredients and was left out. Add any genuine missing ingredient below.`);
+    result.warnings.push(t("{0} text {1} not recognised as ingredients and was left out. Add any genuine missing ingredient below.", [result.unrecognized.length, result.unrecognized.length === 1 ? 'item was' : 'items were']));
   }
   const openBrackets = (result.ingredientText.match(/[([{]/g) ?? []).length;
   const closedBrackets = (result.ingredientText.match(/[)\]}]/g) ?? []).length;

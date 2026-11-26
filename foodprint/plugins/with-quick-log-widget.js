@@ -13,6 +13,16 @@ function addWidgetTarget(project, config) {
   project.addToPbxGroup(group.uuid, project.getFirstProject().firstProject.mainGroup);
   const source = project.addSourceFile('BellywiseQuickLog.swift', { target: target.uuid }, group.uuid);
   delete project.pbxFileReferenceSection()[source.fileRef].explicitFileType;
+  // node-xcode's resource helper inspects this group even when another group
+  // is supplied. A freshly generated Expo project need not contain it yet.
+  if ((config.ios.infoPlist?.CFBundleLocalizations || []).length && !project.pbxGroupByName('Resources')) {
+    const resources = project.addPbxGroup([], 'Resources');
+    project.addToPbxGroup(resources.uuid, project.getFirstProject().firstProject.mainGroup);
+  }
+  for (const locale of config.ios.infoPlist?.CFBundleLocalizations || []) {
+    const resource = project.addResourceFile(`${locale}.lproj`, { target: target.uuid }, group.uuid);
+    if (resource?.fileRef) project.pbxFileReferenceSection()[resource.fileRef].lastKnownFileType = 'folder';
+  }
   for (const file of Object.values(project.pbxBuildFileSection())) {
     if (typeof file === 'object' && file.fileRef === target.pbxNativeTarget.productReference) file.settings = { ATTRIBUTES: ['RemoveHeadersOnCopy'] };
   }
@@ -45,6 +55,9 @@ function withQuickLogWidget(config) {
     const folder = path.join(mod.modRequest.platformProjectRoot, targetName);
     fs.mkdirSync(folder, { recursive: true });
     fs.copyFileSync(path.join(mod.modRequest.projectRoot, 'native', targetName, `${targetName}.swift`), path.join(folder, `${targetName}.swift`));
+    for (const entry of fs.readdirSync(path.join(mod.modRequest.projectRoot, 'native', targetName))) {
+      if (entry.endsWith('.lproj')) fs.cpSync(path.join(mod.modRequest.projectRoot, 'native', targetName, entry), path.join(folder, entry), { recursive: true });
+    }
     fs.writeFileSync(path.join(folder, `${targetName}-Info.plist`), `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -55,6 +68,8 @@ function withQuickLogWidget(config) {
 <key>CFBundlePackageType</key><string>XPC!</string>
 <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
 <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+<key>CFBundleDevelopmentRegion</key><string>en-GB</string>
+<key>CFBundleLocalizations</key><array>${(mod.ios.infoPlist?.CFBundleLocalizations || ['en-GB']).map(locale => `<string>${locale}</string>`).join('')}</array>
 <key>NSExtension</key><dict><key>NSExtensionPointIdentifier</key><string>com.apple.widgetkit-extension</string></dict>
 </dict></plist>`);
     return mod;

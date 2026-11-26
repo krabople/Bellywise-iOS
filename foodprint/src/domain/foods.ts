@@ -1,9 +1,11 @@
+import { t } from '../i18n';
 import { Confidence, FoodResolution, IngredientExposure } from './types';
 import { extraRecipes, type Recipe } from './extraRecipes';
 import extendedGuide from '../data/extendedFoodGuide.json';
 import { spellingDistance, foodQualifierKey } from './catalogMatching';
+import { canonicalMealName } from '../i18n/foodNames';
 
-import { findIngredientRecord, ingredientCatalog, ingredientFromText, ingredientsFromNames, normalizeIngredientText } from './ingredients';
+import { findIngredientRecord, ingredientCatalog, ingredientFromText, ingredientsFromNames, normalizeIngredientText, ingredientExclusions } from './ingredients';
 export { ingredientCatalog, ingredientFromText, ingredientsFromNames } from './ingredients';
 
 const normalize = (value: string) => normalizeIngredientText(value.replace(/&/g, ' and '));
@@ -132,7 +134,7 @@ export const foodRecipeRecordCount = RECIPES.length;
 export const foodCatalogSize = RECIPES.length + ingredientCatalog.length;
 
 export function suggestFoodNames(input: string): string[] {
-  const query = normalize(input); if (query.length < 3) return [];
+  const query = normalize(canonicalMealName(input)); if (query.length < 3) return [];
   const results = new Map<Recipe, number>();
   const tokens = query.split(' ');
   for (const { alias, recipe } of aliasRows) {
@@ -155,10 +157,11 @@ function makeIngredient(id: string, confidence: Confidence = 'inferred'): Ingred
 /** Resolve whole dish names before individual words, so peanut butter never becomes dairy. */
 export function resolveFood(input: string, variant?: string): FoodResolution {
   const name = input.trim();
-  const query = normalize(name);
+  const query = normalize(canonicalMealName(name));
   const variantText = normalize(variant ?? '');
-  const glutenFree = /\bgluten free\b|\b(?:without|no) gluten\b/.test(`${query} ${variantText}`);
-  const lactoseFree = /\blactose free\b/.test(`${query} ${variantText}`);
+  const exclusionsOnName = ingredientExclusions(`${query} ${variantText}`);
+  const glutenFree = exclusionsOnName.includes('gluten') || /\b(?:without|no) gluten\b/.test(`${query} ${variantText}`);
+  const lactoseFree = exclusionsOnName.includes('lactose');
   const vegan = /\bvegan\b/.test(`${query} ${variantText}`);
   const vegetarian = vegan || /\b(?:vegetarian|veggie|meat free|meatfree|meatless|plant based)\b/.test(query);
   const decaf = /\b(?:decaf|decaffeinated|caffeine free)\b/.test(`${query} ${variantText}`);
@@ -223,7 +226,7 @@ export function resolveFood(input: string, variant?: string): FoodResolution {
   return {
     name, ingredients, questions, matched,
     description: matched
-      ? `${fuzzy && !exactRecipe ? `Closest recipe: ${recipe!.names[0]}. ` : ''}${recipe?.sourceUrl ? 'Recognised in the USDA food guide. ' : ''}${recipe?.incomplete ? 'The guide cannot supply a complete ingredient list. Add missing ingredients from your recipe or packet. ' : ''}Typical recipe only. Ingredients are estimates; edit anything that differs from what you ate.`
+      ? t("{0}{1}{2}Typical recipe only. Ingredients are estimates; edit anything that differs from what you ate.", [fuzzy && !exactRecipe ? `Closest recipe: ${recipe!.names[0]}. ` : '', recipe?.sourceUrl ? 'Recognised in the USDA food guide. ' : '', recipe?.incomplete ? 'The guide cannot supply a complete ingredient list. Add missing ingredients from your recipe or packet. ' : ''])
       : 'No complete recipe match. This entry stays uncertain until you add or confirm its ingredients.',
   };
 }

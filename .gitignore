@@ -17,3 +17,7 @@ foodprint/android/
 artifacts/
 __pycache__/
 *.pyc
+foodprint/src/i18n/messages.next.json
+foodprint/src/i18n/messages.finalized.json
+foodprint/src/i18n/messages.repaired.json
+foodprint/localization/*.lock.json

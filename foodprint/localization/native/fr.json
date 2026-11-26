@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Scannez les codes-barres des produits et photographiez les listes d'ingrédients afin que Bellywise puisse vous aider à enregistrer les aliments et les boissons.",
+    "NSPhotoLibraryUsageDescription": "Choisissez une photo d'étiquette d'ingrédient à lire en privé sur cet appareil."
+  }
+}

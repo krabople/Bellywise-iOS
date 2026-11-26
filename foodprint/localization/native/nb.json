@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Skann produktstrekkoder og fotografer ingredienslister slik at Bellywise kan hjelpe deg med å logge mat og drikke.",
+    "NSPhotoLibraryUsageDescription": "Velg et bilde med ingrediensetikett å lese privat på denne enheten."
+  }
+}

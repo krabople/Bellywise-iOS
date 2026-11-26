@@ -22,14 +22,14 @@ struct QuickLogView: View {
         Link(destination: URL(string: "bellywise://quick-log/\(action)")!) {
             VStack(spacing: 8) {
                 Image(systemName: symbol).font(.system(size: 23, weight: .medium))
-                Text(title).font(.system(size: 12, weight: .semibold)).multilineTextAlignment(.center).lineLimit(2)
+                Text(LocalizedStringKey(title)).font(.system(size: 12, weight: .semibold)).multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity, minHeight: 65)
             .foregroundStyle(green)
             .padding(.vertical, 4)
             .background(green.opacity(0.09), in: RoundedRectangle(cornerRadius: 14))
         }
-        .accessibilityLabel(title)
+        .accessibilityLabel(Text(LocalizedStringKey(title)))
     }
 
     private var content: some View {

@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "제품 바코드를 스캔하고 성분 목록 사진을 찍으면 Bellywise가 음식과 음료를 기록하는 데 도움이 됩니다.",
+    "NSPhotoLibraryUsageDescription": "이 장치에서 비공개로 읽으려면 성분 라벨 사진을 선택하세요."
+  }
+}

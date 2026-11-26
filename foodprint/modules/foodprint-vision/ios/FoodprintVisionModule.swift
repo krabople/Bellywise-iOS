@@ -9,7 +9,7 @@ public final class FoodprintVisionModule: Module {
   public func definition() -> ModuleDefinition {
     Name("FoodprintVision")
 
-    AsyncFunction("recognizeText") { (uri: String) throws -> [String: Any] in
+    AsyncFunction("recognizeText") { (uri: String, preferredLanguages: [String]) throws -> [String: Any] in
       guard let url = URL(string: uri), url.isFileURL else {
         throw VisionInputException("Choose a local camera or photo-library image.")
       }
@@ -30,7 +30,17 @@ public final class FoodprintVisionModule: Module {
       let request = VNRecognizeTextRequest()
       request.recognitionLevel = .accurate
       request.usesLanguageCorrection = true
-      request.recognitionLanguages = ["en-GB", "en-US"]
+      // Vision support varies by iOS version. Filter rather than requesting an
+      // unsupported language, which would make otherwise readable labels fail.
+      let supported = try request.supportedRecognitionLanguages()
+      var languages: [String] = []
+      for preferred in preferredLanguages.prefix(6) {
+        let base = preferred.components(separatedBy: "-").first ?? preferred
+        if let match = supported.first(where: { $0 == preferred }) ?? supported.first(where: { $0.hasPrefix(base + "-") }) {
+          if !languages.contains(match) { languages.append(match) }
+        }
+      }
+      if !languages.isEmpty { request.recognitionLanguages = languages }
       request.automaticallyDetectsLanguage = true
       request.customWords = ["Ingredients", "allergens", "lactose", "fructans", "inulin", "sorbitol", "xylitol", "erythritol"]
       let handler = VNImageRequestHandler(cgImage: image, orientation: .up, options: [:])

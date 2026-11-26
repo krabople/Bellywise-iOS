@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Skannaa tuotteiden viivakoodit ja valokuvaa ainesosaluettelot, jotta Bellywise voi auttaa sinua kirjaamaan ruokaa ja juomia.",
+    "NSPhotoLibraryUsageDescription": "Valitse ainesosamerkinnän kuva, jota haluat lukea yksityisesti tällä laitteella."
+  }
+}

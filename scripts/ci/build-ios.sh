@@ -102,6 +102,7 @@ if [[ -z "$SIMULATOR_APP" ]]; then
   echo "The simulator build did not produce an application." >&2
   exit 1
 fi
+python3 "$SCRIPT_DIR/verify-localizations.py" "$SIMULATOR_APP" "$APP_DIR/app.json"
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$SIMULATOR_APP/Info.plist")"
 APP_PROCESS="$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$SIMULATOR_APP/Info.plist")"
 # Let Xcode place iOS simulator entitlements in __TEXT,__entitlements. Injecting

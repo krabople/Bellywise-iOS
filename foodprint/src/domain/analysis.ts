@@ -1,3 +1,4 @@
+import {t, formatNumber } from '../i18n';
 import { mealExposures, evidenceContext } from './patternEvidence';
 import { addDays, isDateKey, localDateKey } from './dates';
 import { getIngredientInfo, ingredientCatalog } from './ingredients';
@@ -21,7 +22,7 @@ interface Day {
 }
 interface Observation { date: string; exposed: boolean; confirmed: boolean; outcome: boolean; peakSeverity?: number; stress?: number; sleep?: number; complete: boolean }
 
-const pct = (value: number) => `${Math.round(value * 100)}%`;
+const pct = (value: number) => formatNumber(value, { style: 'percent', maximumFractionDigits: 0 });
 const difference = (rows: Observation[]) => {
   const exposed = rows.filter(row => row.exposed), unexposed = rows.filter(row => !row.exposed);
   return exposed.length && unexposed.length
@@ -151,11 +152,11 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
     const id = `${ingredientId}:${symptomId}:${window}`;
     const cautions = ['An association cannot establish an intolerance or cause. Other foods, timing, illness, medication and menstrual changes can affect symptoms.'];
     const unfinishedRows = observations.filter(row => !row.complete).length;
-    if (unfinishedRows) cautions.push(`${unfinishedRows} comparison day${unfinishedRows === 1 ? '' : 's'} use explicitly logged food or symptoms from an unfinished day. Bellywise uses what was present but never assumes an unlogged ingredient or symptom was absent.`);
+    if (unfinishedRows) cautions.push(t("{0} comparison day{1} use explicitly logged food or symptoms from an unfinished day. Bellywise uses what was present but never assumes an unlogged ingredient or symptom was absent.", [unfinishedRows, unfinishedRows === 1 ? '' : 's']));
     if (ordered.some(day => day.unresolvedMeal)) cautions.push('Days containing unresolved meal names or meals with no ingredients are excluded. Review those entries so hidden ingredients are not treated as absent.');
-    if (!enough) cautions.push(`Keep logging: this comparison needs at least ${MINIMUM_COMPLETE_DAYS} complete days, including ${MINIMUM_COMPARISON_DAYS} with and ${MINIMUM_COMPARISON_DAYS} without this ingredient.`);
-    if (confirmedExposedDays < exposed.length) cautions.push(`${exposed.length - confirmedExposedDays} exposure days rely on recipe estimates or derived components. A label or recipe check can strengthen direct ingredient evidence; estimated component amounts remain uncertain.`);
-    if (coOccursWith.length) cautions.push(`Usually logged together with ${coOccursWith.slice(0, 4).join(', ')}. These entries cannot separate their individual contributions.`);
+    if (!enough) cautions.push(t("Keep logging: this comparison needs at least {0} complete days, including {1} with and {2} without this ingredient.", [MINIMUM_COMPLETE_DAYS, MINIMUM_COMPARISON_DAYS, MINIMUM_COMPARISON_DAYS]));
+    if (confirmedExposedDays < exposed.length) cautions.push(t("{0} exposure days rely on recipe estimates or derived components. A label or recipe check can strengthen direct ingredient evidence; estimated component amounts remain uncertain.", [exposed.length - confirmedExposedDays]));
+    if (coOccursWith.length) cautions.push(t("Usually logged together with {0}. These entries cannot separate their individual contributions.", [coOccursWith.slice(0, 4).join(', ')]));
     if (stressConfounded) cautions.push('Stress differs between the comparison groups, or the pattern weakens on lower-stress days. This may explain part of the association.');
     if (lowStressRiskDifference === undefined) cautions.push('There are not enough lower-stress days in both groups to check whether the pattern persists with similar stress.');
     if (sleepConfounded) cautions.push('Sleep differs substantially between the groups, or the link weakens after nights with at least seven hours of sleep. Confidence is reduced because sleep may explain part of the pattern.');
@@ -173,8 +174,8 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
       pValue: completeExposed.length && completeUnexposed.length ? fisherExact(completeA, completeExposed.length - completeA, completeC, completeUnexposed.length - completeC) : 1, adjustedPValue: 1,
       status: enough ? 'exploratory' : 'not-enough-data',
       severity,
-      headline: `${ingredientName} & ${symptom.name.toLowerCase()}`,
-      summary: `${symptom.name} was logged on ${pct(exposedRate)} of days with ${ingredientName.toLowerCase()} and ${pct(unexposedRate)} of days without it${window === 'next-day' ? ', looking at the following day' : ''}.`,
+      headline: t("{0} & {1}", [ingredientName, symptom.name]),
+      summary: t("{0} was logged on {1} of days with {2} and {3} of days without it{4}.", [symptom.name, pct(exposedRate), t(ingredientName).toLowerCase(), pct(unexposedRate), window === 'next-day' ? ', looking at the following day' : '']),
       cautions, coOccursWith, inferredFraction: 1 - confirmedExposedDays / exposed.length, confirmedExposedDays, lowStressRiskDifference, restedRiskDifference,
       evidenceContext: symptom.kind === 'positive' ? 'This describes a positive feeling in your diary. It does not establish that a food improves health or is safe for an allergy.' : evidenceContext(ingredientId, ingredientName),
       interpretationConfidence: ingredientId.startsWith('food:') ? 'whole-product' : ['not-common', 'unknown'].includes(getIngredientInfo(ingredientId, ingredientName).triggerLevel) ? 'limited' : 'context-supported',
@@ -202,7 +203,7 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
     const strength = { 'not-enough-data': 0, exploratory: 1, emerging: 2 };
     if (severityCandidate && (!frequencyCandidate || strength[severity.status] > strength[row.status])) row.status = severity.status;
     if (severityCandidate) {
-      const intensitySummary = `On days ${row.symptomName.toLowerCase()} was logged, its strongest daily rating averaged ${severity.exposedAverage!.toFixed(1)}/5 with ${row.ingredientName.toLowerCase()} and ${severity.unexposedAverage!.toFixed(1)}/5 without it${row.window === 'next-day' ? ', using ratings from the following day' : ''}.`;
+      const intensitySummary = t("On days {0} was logged, its strongest daily rating averaged {1}/5 with {2} and {3}/5 without it{4}.", [t(row.symptomName).toLowerCase(), formatNumber(severity.exposedAverage!, { minimumFractionDigits: 1, maximumFractionDigits: 1 }), t(row.ingredientName).toLowerCase(), formatNumber(severity.unexposedAverage!, { minimumFractionDigits: 1, maximumFractionDigits: 1 }), row.window === 'next-day' ? ', using ratings from the following day' : '']);
       row.summary = row.signal === 'both' ? `${row.summary} ${intensitySummary}` : intensitySummary;
     }
   });
@@ -220,8 +221,8 @@ export function analyzePatterns(data: AppData, options: { now?: Date; window?: E
   const legacyDays = ordered.filter(day => day.checkIn?.complete && !day.checkIn.trackedSymptomIds).length;
   return {
     patterns, completeDays, minimumDays: MINIMUM_COMPLETE_DAYS,
-    message: legacyDays > 0 ? `${legacyDays} complete day${legacyDays === 1 ? '' : 's'} need${legacyDays === 1 ? 's' : ''} review of which feelings were tracked. Re-save those daily check-ins to use them in patterns. A feeling that was not tracked never counts as absent.` : completeDays < MINIMUM_COMPLETE_DAYS
-      ? `${completeDays} of ${MINIMUM_COMPLETE_DAYS} complete past days logged. Logged food-and-symptom events from unfinished days can still contribute, but only a completed check-in can confirm that a symptom was absent.`
+    message: legacyDays > 0 ? t("{0} complete day{1} need{2} review of which feelings were tracked. Re-save those daily check-ins to use them in patterns. A feeling that was not tracked never counts as absent.", [legacyDays, legacyDays === 1 ? '' : 's', legacyDays === 1 ? 's' : '']) : completeDays < MINIMUM_COMPLETE_DAYS
+      ? t("{0} of {1} complete past days logged. Logged food-and-symptom events from unfinished days can still contribute, but only a completed check-in can confirm that a symptom was absent.", [completeDays, MINIMUM_COMPLETE_DAYS])
       : 'Patterns use logged food-and-symptom events and completed check-ins. Only completed days can provide symptom-free comparisons; consider every observation with a qualified clinician.',
   };
 }

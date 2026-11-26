@@ -39,6 +39,8 @@ jobs:
       - run: npm ci
       - name: TypeScript
         run: npx tsc --noEmit
+      - name: Localisation completeness and interpolation safety
+        run: npm run check:localization
       - name: Domain and parser tests
         run: npx tsx --test tests/*.test.ts
       - name: Web bundle

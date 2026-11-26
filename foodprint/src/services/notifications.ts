@@ -1,3 +1,4 @@
+import { t, getLocale } from '../i18n';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { isCompletedReviewNotification, plannedDayReviews, reviewReminderChanges } from '../domain/dayReviewReminders';
@@ -35,12 +36,12 @@ export async function replaceLocalReminders(previousIds: (string | undefined)[],
   // The review scheduler below owns date-specific reminders, never a daily repeat.
   if (!enabled || kind === 'day-review') return [];
   const content = kind === 'food'
-    ? { title: 'Time to log food or drink', body: 'Add what you ate or drank while it is still fresh in your mind.' }
-    : { title: 'How was your day?', body: 'Log any feelings, or confirm that today was symptom-free.' };
+    ? { title: t("Time to log food or drink"), body: t("Add what you ate or drank while it is still fresh in your mind.") }
+    : { title: t("How was your day?"), body: t("Log any feelings, or confirm that today was symptom-free.") };
   const ids: string[] = [];
   try {
     for (const time of times) ids.push(await Notifications.scheduleNotificationAsync({
-      content: { ...content, sound: 'default', data: { kind: `${kind}-reminder` } },
+      content: { ...content, sound: 'default', data: { kind: `${kind}-reminder`, locale: getLocale() } },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour: time.hour, minute: time.minute },
     }));
   } catch (error) {
@@ -61,10 +62,13 @@ export function reconcileDayReviewReminders(checkIns: DayCheckIn[], preferences:
   const operation = reviewQueue.then(async () => {
     const plan = preferences.dayReviewReminderEnabled ? plannedDayReviews(checkIns, { hour: preferences.dayReviewReminderHour, minute: preferences.dayReviewReminderMinute }, now) : [];
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-    const changes = reviewReminderChanges(plan, scheduled.map(row => ({ identifier: row.identifier, kind: row.content.data?.kind })), preferences.dayReviewReminderId);
+    const stale = scheduled.filter(row => row.content.data?.kind === 'day-review-reminder' && row.content.data?.locale !== getLocale());
+    for (const row of stale) await Notifications.cancelScheduledNotificationAsync(row.identifier);
+    const staleIds = new Set(stale.map(row => row.identifier));
+    const changes = reviewReminderChanges(plan, scheduled.filter(row => !staleIds.has(row.identifier)).map(row => ({ identifier: row.identifier, kind: row.content.data?.kind })), preferences.dayReviewReminderId);
     for (const identifier of changes.cancel) await Notifications.cancelScheduledNotificationAsync(identifier);
     for (const reminder of changes.add) await Notifications.scheduleNotificationAsync({
-      identifier: reminder.id, content: { title: 'How was your day?', body: 'Log any feelings, or confirm that the day was symptom-free.', sound: 'default', data: { kind: 'day-review-reminder', date: reminder.date } },
+      identifier: reminder.id, content: { title: t("How was your day?"), body: t("Log any feelings, or confirm that the day was symptom-free."), sound: 'default', data: { kind: 'day-review-reminder', date: reminder.date, locale: getLocale() } },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: reminder.at },
     });
   });
@@ -75,10 +79,10 @@ export function reconcileDayReviewReminders(checkIns: DayCheckIn[], preferences:
 export async function notifyNewPatterns(patterns: { id?: string; ingredientName: string; symptomName: string }[]): Promise<void> {
   if (Platform.OS === 'web' || patterns.length === 0) return;
   const body = patterns.length === 1
-    ? `${patterns[0].ingredientName} and ${patterns[0].symptomName.toLowerCase()} are now worth a closer look in your diary.`
-    : `${patterns.length} diary comparisons are now worth a closer look.`;
+    ? t("{0} and {1} are now worth a closer look in your diary.", [patterns[0].ingredientName, patterns[0].symptomName.toLowerCase()])
+    : t("{0} diary comparisons are now worth a closer look.", [patterns.length]);
   await Notifications.scheduleNotificationAsync({
-    content: { title: 'Bellywise noticed a new pattern', body, sound: 'default', data: { kind: 'new-pattern', patternId: patterns.length === 1 ? patterns[0].id : undefined } },
+    content: { title: t("Bellywise noticed a new pattern"), body, sound: 'default', data: { kind: 'new-pattern', patternId: patterns.length === 1 ? patterns[0].id : undefined } },
     trigger: null,
   });
 }

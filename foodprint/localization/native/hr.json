@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Skenirajte bar kodove proizvoda i fotografirajte popise sastojaka kako bi vam Bellywise mogao pomoći u bilježenju hrane i pića.",
+    "NSPhotoLibraryUsageDescription": "Odaberite fotografiju s oznakom sastojka za privatno čitanje na ovom uređaju."
+  }
+}

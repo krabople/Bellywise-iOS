@@ -1,4 +1,7 @@
+import { t, getLocale, offLanguage } from '../i18n';
 import taxonomy from '../data/openFoodFactsIngredients.json';
+import international from '../data/internationalIngredients.json';
+import { canonicalLabelContext } from '../i18n/labelContext';
 import { isPackagingText } from './ingredientTextPolicy';
 import type { Confidence, IngredientExposure } from './types';
 
@@ -29,7 +32,7 @@ export interface IngredientInfo {
 
 export const normalizeIngredientText = (text: string) => text.toLowerCase().normalize('NFKD')
   .replace(/[\u0300-\u036f]/g, '').replace(/[’']/g, '').replace(/[-–—]/g, ' ')
-  .replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  .replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ').replace(/\s+/g, ' ').trim();
 
 const CORE_ROWS: [string, string, string[]?][] = [
   ['bread', 'Bread / toast', ['bread', 'toast', 'toasted bread']],
@@ -42,7 +45,7 @@ const CORE_ROWS: [string, string, string[]?][] = [
   ['barley', 'Barley', ['barley malt', 'malt extract']], ['rye', 'Rye'], ['oats', 'Oats', ['oat', 'oat flour']],
   ['rice', 'Rice', ['rice flour', 'brown rice']], ['maize', 'Maize / corn', ['maize', 'corn', 'cornflour', 'corn starch', 'corn flour']],
   ['tapioca', 'Tapioca', ['tapioca starch']], ['potato', 'Potato', ['potatoes', 'potato starch']],
-  ['milk', 'Milk', ['dairy', 'whole milk', 'skimmed milk', 'semi skimmed milk', 'semi-skimmed milk', 'skim milk', 'milk powder', 'whole milk powder', 'skimmed milk powder', 'skim milk powder', 'milk solids', 'lactose free milk']],
+  ['milk', 'Milk', ['dairy', 'cow milk', "cow's milk", 'cows milk', 'bovine milk', 'whole milk', 'skimmed milk', 'semi skimmed milk', 'semi-skimmed milk', 'skim milk', 'milk powder', 'whole milk powder', 'skimmed milk powder', 'skim milk powder', 'milk solids', 'lactose free milk']],
   ['butter', 'Butter', ['salted butter', 'unsalted butter']], ['ghee', 'Ghee', ['clarified butter']],
   ['cheese', 'Cheese'], ['hard-cheese', 'Hard / aged cheese', ['cheddar', 'parmesan', 'aged cheese', 'hard cheese']],
   ['cream-cheese', 'Cream cheese', ['soft cheese', 'ricotta', 'cottage cheese']], ['mozzarella', 'Mozzarella'],
@@ -80,7 +83,7 @@ const CORE_ROWS: [string, string, string[]?][] = [
   ['gelatine', 'Gelatine', ['gelatin', 'beef gelatine', 'pork gelatine', 'bovine gelatine', 'porcine gelatine']],
   ['ginger', 'Ginger'], ['cumin', 'Cumin'], ['coriander', 'Coriander', ['cilantro']], ['basil', 'Basil'], ['oregano', 'Oregano'],
   ['quinoa', 'Quinoa'], ['buckwheat', 'Buckwheat'], ['water', 'Water', ['plain water', 'tap water', 'still water', 'mineral water', 'spring water', 'bottled water', 'filtered water', 'purified water', 'drinking water']],
-  ['niacin', 'Niacin (vitamin B3)', ['niacin', 'vitamin b3', 'b3', 'nicotinic acid', 'nicotinamide', 'niacinamide']],
+  ['niacin', 'Niacin (vitamin B3)', ['niacin', 'niacine', 'niacina', 'niacyna', 'niasin', 'ナイアシン', '烟酸', '菸鹼酸', '니아신', 'ниацин', 'نياسين', 'ניאצין', 'vitamin b3', 'b3', 'nicotinic acid', 'nicotinamide', 'niacinamide']],
   ['thiamin', 'Thiamin (vitamin B1)', ['thiamin', 'thiamine', 'vitamin b1', 'b1', 'thiamine mononitrate']],
   ['riboflavin', 'Riboflavin (vitamin B2)', ['riboflavin', 'vitamin b2', 'b2']],
   ['pantothenic-acid', 'Pantothenic acid (vitamin B5)', ['pantothenic acid', 'vitamin b5', 'b5']],
@@ -120,17 +123,11 @@ for (const raw of taxonomy.records as IngredientRecord[]) {
 
 export const ingredientCatalog: IngredientRecord[] = combined;
 const byId = new Map(ingredientCatalog.map(record => [record.id, record]));
-const searchableAliases = new Map<string, IngredientRecord>();
-for (const record of ingredientCatalog) for (const alias of record.aliases) {
-  if (alias.length >= 2 && !searchableAliases.has(alias)) searchableAliases.set(alias, record);
+const legacyIngredientIds = new Map<string, IngredientRecord>();
+for (const raw of taxonomy.records as IngredientRecord[]) {
+  const owner = aliasOwner.get(normalizeIngredientText(raw.name));
+  if (owner && owner.id !== raw.id) legacyIngredientIds.set(raw.id, owner);
 }
-const maxAliasWords = Math.max(...[...searchableAliases.keys()].map(alias => alias.split(' ').length));
-
-// These preparation/appearance words do not turn a food into a different
-// substance for diary correlation. The parent relationship must also point to
-// one of our curated food families, so an arbitrary shared word cannot merge
-// unrelated records. Transformations such as oil, extract, flavouring,
-// fermented or hydrolysed deliberately remain separate.
 const FAMILY_MODIFIERS = new Set([
   'fresh', 'raw', 'dried', 'dry', 'dehydrated', 'freeze', 'frozen', 'freeze-dried',
   'whole', 'chopped', 'minced', 'sliced', 'crushed', 'ground', 'grated', 'peeled',
@@ -138,6 +135,38 @@ const FAMILY_MODIFIERS = new Set([
   'red', 'green', 'yellow', 'white', 'brown', 'orange', 'purple', 'ripe', 'unripe',
   'unsweetened', 'sweetened',
 ]);
+// Local names resolve to the EXISTING English/canonical record. Do not merge
+// two substances merely because a translated alias is ambiguous.
+const ambiguousAliases = new Set<string>();
+const localDisplayNames = new Map<string, string>();
+for (const row of international.records as { id: string; names: Record<string, string[]> }[]) {
+  const owner = byId.get(row.id) ?? legacyIngredientIds.get(row.id); if (!owner) continue;
+  for (const [language, names] of Object.entries(row.names)) if (names[0] && !localDisplayNames.has(`${language}:${owner.id}`)) localDisplayNames.set(`${language}:${owner.id}`, names[0]);
+  for (const names of Object.values(row.names)) for (const name of names) {
+    const alias = normalizeIngredientText(name); if (!alias || ambiguousAliases.has(alias)) continue;
+    const existing = aliasOwner.get(alias);
+    if (existing && canonicalFamily(existing).id !== canonicalFamily(owner).id) {
+      // English aliases retain their established meaning. Other collisions
+      // are omitted and the user can choose a more specific ingredient.
+      if (!coreAliasOwner.has(alias) && !existing.aliases.includes(alias)) aliasOwner.delete(alias);
+      ambiguousAliases.add(alias); continue;
+    }
+    if (!existing) aliasOwner.set(alias, owner);
+  }
+}
+const searchableAliases = new Map<string, IngredientRecord>();
+for (const record of ingredientCatalog) for (const alias of record.aliases) {
+  if (alias.length >= 2 && !searchableAliases.has(alias)) searchableAliases.set(alias, record);
+}
+for (const [alias, record] of aliasOwner) if (alias.length >= 2 && !ambiguousAliases.has(alias) && !searchableAliases.has(alias)) searchableAliases.set(alias, record);
+const maxAliasWords = Math.max(...[...searchableAliases.keys()].map(alias => alias.split(' ').length));
+
+// These preparation/appearance words do not turn a food into a different
+// substance for diary correlation. The parent relationship must also point to
+// one of our curated food families, so an arbitrary shared word cannot merge
+// unrelated records. Transformations such as oil, extract, flavouring,
+// fermented or hydrolysed deliberately remain separate.
+
 
 function canonicalFamily(record: IngredientRecord): IngredientRecord {
   const nameWords = normalizeIngredientText(record.name).split(' ').filter(Boolean);
@@ -171,13 +200,15 @@ function inflectionCandidates(value: string): string[] {
 }
 
 export function findIngredientRecord(value: string, custom: IngredientRecord[] = []): IngredientRecord | undefined {
+  value = canonicalLabelContext(value);
   const normalized = normalizeIngredientText(value);
   if (!normalized || exclusions.test(normalized)) return undefined;
-  const clean = stripQualifiers(value.replace(/\([^)]*\)/g, '')).replace(/^gluten\s+free\s+/, '');
+  const clean = stripQualifiers(value.replace(/\b(?:gluten|lactose)\s+free\b/gi, '').replace(/\([^)]*\)/g, '')).replace(/^gluten\s+free\s+/, '');
   const candidates = [clean, ...inflectionCandidates(clean), normalized];
   const customMatch = custom.find(record => [record.name, ...record.aliases].some(alias => candidates.includes(normalizeIngredientText(alias))));
   const match = customMatch ?? candidates.map(candidate => aliasOwner.get(candidate)).find(Boolean) ?? byId.get(clean) ?? byId.get(normalized.replace(/^en /, ''));
-  return match && !customMatch ? canonicalFamily(match) : match;
+  const canonical = match && !customMatch ? canonicalFamily(match) : match;
+  return canonical && ingredientExclusions(value).includes(canonical.id) ? undefined : canonical;
 }
 
 /**
@@ -185,6 +216,7 @@ export function findIngredientRecord(value: string, custom: IngredientRecord[] =
  * Multi-ingredient OCR runs are accepted only when catalogue phrases cover most words.
  */
 export function matchIngredientPhrases(value: string, custom: IngredientRecord[] = []): IngredientRecord[] {
+  value = canonicalLabelContext(value);
   const normalized = normalizeIngredientText(value);
   if (!normalized || isPackagingText(value) || exclusions.test(normalized) || /\b(?:may contain|allergy advice|allergen information|free from|does not contain)\b/.test(normalized)) return [];
   const exact = findIngredientRecord(value, custom);
@@ -237,17 +269,48 @@ export function suggestIngredientRecords(value: string, limit = 5, custom: Ingre
     if (!distinct.has(record.id)) distinct.set(record.id, record);
     if (distinct.size >= limit) break;
   }
-  return [...distinct.values()];
+  const local = new Map<string, IngredientRecord>();
+  for (const [alias, record] of aliasOwner) if (alias.startsWith(query) && !ambiguousAliases.has(alias)) {
+    const canonical = canonicalFamily(record); local.set(canonical.id, canonical);
+    if (local.size >= limit) break;
+  }
+  return [...new Map([...local, ...distinct]).values()].slice(0, limit);
+}
+
+export function ingredientDisplayName(id: string, fallback: string): string {
+  const record = byId.get(id) ?? legacyIngredientIds.get(id); if (!record) return fallback;
+  const translated = t(record.name); if (translated !== record.name) return translated;
+  const language = offLanguage(getLocale());
+  if (language === 'en') return record.name;
+  return localDisplayNames.get(`${language}:${record.id}`) ?? record.name;
 }
 
 export function ingredientFromText(text: string, confidence: Confidence = 'confirmed', custom: IngredientRecord[] = []): IngredientExposure {
+  const original = text;
+  text = canonicalLabelContext(text);
   const known = findIngredientRecord(text, custom);
   const clean = normalizeIngredientText(text);
-  const excludedComponents = [/\bgluten[ -]free\b/i.test(text) ? 'gluten' : '', /\blactose[ -]free\b/i.test(text) ? 'lactose' : ''].filter(Boolean);
+  const excludedComponents = ingredientExclusions(text);
   return known ? { id: known.id, name: known.name, confidence, ...(excludedComponents.length ? { excludedComponents } : {}) } : {
-    id: `custom-${clean.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'ingredient'}`,
-    name: text.trim(), confidence,
+    id: `custom-${clean.replace(/[^\p{L}\p{M}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'ingredient'}`,
+    name: original.trim(), confidence,
   };
+}
+
+export function ingredientExclusions(text: string): string[] {
+  const contextual = canonicalLabelContext(text);
+  return ['gluten', 'lactose'].filter(id => {
+    const match = new RegExp(`\\b${id}[ -]free\\b`, 'i').exec(contextual);
+    return match !== null && !/\b(?:not|never)\s*$/i.test(contextual.slice(0, match.index));
+  });
+}
+
+/** Preserve a printed free-from claim alongside the matched canonical name. */
+export function labelIngredientName(record: Pick<IngredientRecord, 'name'>, labelText: string): string {
+  const exclusions = ingredientExclusions(labelText);
+  if (!exclusions.length) return record.name;
+  const name = record.name.replace(/\b(?:gluten|lactose)[ -]free\b/gi, '').replace(/\s+/g, ' ').trim();
+  return [...exclusions.map(id => `${id}-free`), name].join(' ');
 }
 
 export function ingredientsFromNames(names: string[], confidence: Confidence = 'confirmed', custom: IngredientRecord[] = []): IngredientExposure[] {
@@ -274,7 +337,9 @@ export function expandIngredientExposuresForAnalysis(ingredients: IngredientExpo
       ? previous
       : { ...ingredient, confidence: ingredient.confidence === 'confirmed' ? 'confirmed' : previous?.confidence ?? ingredient.confidence });
   };
-  for (const ingredient of ingredients) {
+  for (const original of ingredients) {
+    const canonical = legacyIngredientIds.get(original.id);
+    const ingredient = canonical ? { ...original, id: canonical.id, name: canonical.name } : original;
     add(ingredient);
     const excluded = new Set(ingredient.excludedComponents ?? []);
     if (/\bgluten[ -]free\b/i.test(context)) excluded.add('gluten');
@@ -372,20 +437,21 @@ function inferredProfile(id: string, record?: IngredientRecord): IngredientProfi
     symptomContext: 'Check the spelling and exact substance. Bellywise can still compare it with your diary, but it cannot provide a trustworthy general symptom profile for an unrecognised entry.',
   };
   return {
-    triggerLevel: 'not-common', triggerSummary: `${record.name} is not widely recognised as a common food-intolerance trigger at normal food amounts.`, commonSymptoms: [],
+    triggerLevel: 'not-common', triggerSummary: t("{0} is not widely recognised as a common food-intolerance trigger at normal food amounts.", [record.name]), commonSymptoms: [],
     symptomContext: 'No characteristic intolerance symptom pattern is established for this ingredient itself. If your diary repeatedly links it with symptoms, consider the portion, preparation and other ingredients eaten alongside it.',
   };
 }
 
 export function getIngredientInfo(id: string, fallbackName?: string): IngredientInfo {
-  const record = byId.get(id) ?? ingredientCatalog.find(item => item.name === fallbackName);
+  const record = byId.get(id) ?? legacyIngredientIds.get(id) ?? ingredientCatalog.find(item => item.name === fallbackName);
+  if (record && record.id !== id) return getIngredientInfo(record.id, record.name);
   const dairyProfiles = ['milk-protein', 'cheese', 'hard-cheese', 'cream-cheese', 'mozzarella', 'yoghurt', 'cream', 'buttermilk', 'whey', 'casein'];
-  const profile = PROFILE[id] ?? (dairyProfiles.includes(id) ? { ...PROFILE.milk, whatItIs: `${record?.name ?? fallbackName ?? 'Milk protein'} is a dairy ingredient or component.`, symptomContext: 'Milk proteins can matter in milk allergy. Lactose content varies with processing and portion: hard aged cheese contains much less than milk; yoghurt may be better tolerated. Casein is a protein, not lactose. A diary cannot identify the mechanism of a reaction.', sourceTitle: 'NIDDK: Lactose intolerance and food choices', sourceUrl: 'https://www.niddk.nih.gov/health-information/digestive-diseases/lactose-intolerance/eating-diet-nutrition' } : inferredProfile(id, record));
-  const name = record?.name ?? fallbackName ?? id;
+  const profile = PROFILE[id] ?? (dairyProfiles.includes(id) ? { ...PROFILE.milk, whatItIs: t("{0} is a dairy ingredient or component.", [record?.name ?? fallbackName ?? 'Milk protein']), symptomContext: 'Milk proteins can matter in milk allergy. Lactose content varies with processing and portion: hard aged cheese contains much less than milk; yoghurt may be better tolerated. Casein is a protein, not lactose. A diary cannot identify the mechanism of a reaction.', sourceTitle: 'NIDDK: Lactose intolerance and food choices', sourceUrl: 'https://www.niddk.nih.gov/health-information/digestive-diseases/lactose-intolerance/eating-diet-nutrition' } : inferredProfile(id, record));
+  const name = ingredientDisplayName(id, record?.name ?? fallbackName ?? id);
   return {
     id, name, aliases: record?.aliases ?? [],
-    whatItIs: profile?.whatItIs ?? record?.description ?? `${name} is a recognised entry in the Open Food Facts ingredient taxonomy.`,
-    whereFound: profile?.whereFound ?? (record?.parents?.length ? `Related ingredient groups: ${record.parents.join(', ')}.` : 'Where it appears depends on the product and recipe. Check the exact label.'),
+    whatItIs: profile?.whatItIs ?? record?.description ?? t("{0} is a recognised entry in the Open Food Facts ingredient taxonomy.", [name]),
+    whereFound: profile?.whereFound ?? (record?.parents?.length ? t("Related ingredient groups: {0}.", [record.parents.join(', ')]) : 'Where it appears depends on the product and recipe. Check the exact label.'),
     triggerLevel: profile.triggerLevel, triggerSummary: profile.triggerSummary, commonSymptoms: profile.commonSymptoms, symptomContext: profile.symptomContext,
     sourceTitle: profile?.sourceTitle, sourceUrl: profile?.sourceUrl,
   };

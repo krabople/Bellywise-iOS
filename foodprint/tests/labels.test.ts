@@ -45,7 +45,7 @@ test('supports a standalone heading and manually selected ingredient field', () 
 
 test('preserves gluten-free text and percentages without inventing ingredients', () => {
   const result = parseIngredientLabel('Ingredients: gluten-free oats (60%), water, contains 2% or less of: salt, yeast. Nutrition Facts: fat 5g');
-  assert.deepEqual(result.ingredients, ['Oats', 'Water', 'Salt', 'Yeast']);
+  assert.deepEqual(result.ingredients, ['gluten-free Oats', 'Water', 'Salt', 'Yeast']);
   assert.deepEqual(result.allergens, []);
 });
 

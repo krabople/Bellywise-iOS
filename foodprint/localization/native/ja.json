@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "製品バーコードをスキャンし、成分リストを写真に撮ることで、Bellywise が食べ物や飲み物の記録に役立ちます。",
+    "NSPhotoLibraryUsageDescription": "このデバイスで非公開で読み取る成​​分ラベルの写真を選択してください。"
+  }
+}

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { expandIngredientExposuresForAnalysis, findIngredientRecord, getIngredientInfo, normalizeIngredientText } from './ingredients';
 import type { AppData, IngredientExposure, Meal, PatternResult } from './types';
 import { isPackagingText } from './ingredientTextPolicy';
@@ -28,7 +29,7 @@ export function evidenceContext(id: string, name: string): string {
   const info = getIngredientInfo(id, name);
   if (info.triggerLevel === 'not-common') return 'Not a commonly recognised intolerance trigger at ordinary food amounts. Treat this as a diary clue with a less established explanation; another ingredient or circumstance may be responsible.';
   if (info.triggerLevel === 'unknown') return 'There is not enough established ingredient information to judge a medical explanation. The diary link alone cannot establish an intolerance.';
-  return `${info.triggerSummary} This background does not measure your personal likelihood of intolerance or prove it explains this particular feeling.`;
+  return t("{0} This background does not measure your personal likelihood of intolerance or prove it explains this particular feeling.", [info.triggerSummary]);
 }
 
 /** Prefer ingredients. A product is a fallback only for an entirely inseparable bundle. */

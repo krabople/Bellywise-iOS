@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Naskenujte čárové kódy produktů a vyfotografujte seznamy složek, aby vám Bellywise mohl pomoci zaznamenat jídlo a pití.",
+    "NSPhotoLibraryUsageDescription": "Vyberte fotografii se štítkem přísady, kterou chcete číst v soukromí na tomto zařízení."
+  }
+}

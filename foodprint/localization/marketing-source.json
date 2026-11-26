@@ -1,0 +1,323 @@
+{
+  "iphone": [
+    {
+      "theme": "dark",
+      "title": "Your diary.\nA clearer picture.",
+      "subtitle": "Keep food, drinks and symptoms together.\nBuild a diary you can look back on.",
+      "eyebrow": "YOUR EVERYDAY DIARY",
+      "labels": [],
+      "footers": [],
+      "order": 1,
+      "slug": "your-diary"
+    },
+    {
+      "theme": "cream",
+      "title": "Scan a barcode.\nLog ingredients fast.",
+      "subtitle": "Bellywise fills in the ingredient list.\nReview it and save to your diary.",
+      "eyebrow": "QUICK FOOD & DRINK LOGGING",
+      "labels": [
+        {
+          "text": "BARCODE",
+          "xy": [
+            108,
+            794
+          ],
+          "size": 27
+        },
+        {
+          "text": "BRAND SEARCH",
+          "xy": [
+            704,
+            794
+          ],
+          "size": 27
+        },
+        {
+          "text": "INDIVIDUAL INGREDIENTS",
+          "xy": [
+            108,
+            1390
+          ],
+          "size": 28
+        }
+      ],
+      "footers": [
+        {
+          "text": "More ingredient detail for spotting patterns.",
+          "y": 2742
+        }
+      ],
+      "order": 2,
+      "slug": "scan-and-search"
+    },
+    {
+      "theme": "sage",
+      "title": "Find patterns.\nExplore the evidence.",
+      "subtitle": "Compare days and follow the timeline.\nSee the meals behind a possible pattern.",
+      "eyebrow": "LOOK CLOSER AT A PATTERN",
+      "labels": [
+        {
+          "text": "MILK & BLOATING · LATER THE SAME DAY",
+          "xy": [
+            110,
+            777
+          ],
+          "size": 25
+        },
+        {
+          "text": "FOLLOW THE DAYS",
+          "xy": [
+            110,
+            1392
+          ],
+          "size": 28
+        },
+        {
+          "text": "FIND THE MEALS",
+          "xy": [
+            110,
+            2160
+          ],
+          "size": 28
+        }
+      ],
+      "footers": [
+        {
+          "text": "Example diary shown. Patterns are clues, not diagnoses.",
+          "y": 2821
+        }
+      ],
+      "order": 3,
+      "slug": "explore-patterns"
+    },
+    {
+      "theme": "cream",
+      "title": "Make room for\nhow you feel.",
+      "subtitle": "Track symptoms and positive feelings.\nChoose your own options and intensity.",
+      "eyebrow": "YOUR SYMPTOMS, YOUR WORDS",
+      "labels": [],
+      "footers": [],
+      "order": 4,
+      "slug": "log-how-you-feel"
+    },
+    {
+      "theme": "sage",
+      "title": "Photograph it.\nPick the ingredients.",
+      "subtitle": "Select the ingredient list on the label.\nCheck what Bellywise finds before logging.",
+      "eyebrow": "INGREDIENT PHOTO SCANNING",
+      "labels": [],
+      "footers": [],
+      "order": 5,
+      "slug": "photograph-ingredients"
+    },
+    {
+      "theme": "cream",
+      "title": "Understand\nyour ingredients.",
+      "subtitle": "Read where ingredients are found\nand how they may relate to symptoms.",
+      "eyebrow": "INFORMATION WITH CONTEXT",
+      "labels": [],
+      "footers": [
+        {
+          "text": "Ingredient background · Symptom context · Source links",
+          "y": 2600
+        }
+      ],
+      "order": 6,
+      "slug": "ingredient-information"
+    },
+    {
+      "theme": "sand",
+      "title": "Same meal.\nA simpler log.",
+      "subtitle": "Reuse meals with their recorded ingredients.\nChange the time and edit anything different.",
+      "eyebrow": "LEFTOVERS MADE EASY",
+      "labels": [],
+      "footers": [],
+      "order": 7,
+      "slug": "reuse-a-meal"
+    },
+    {
+      "theme": "cream",
+      "title": "Put your day\nin context.",
+      "subtitle": "Record stress, sleep and symptom-free days.\nHelp your diary tell a more complete story.",
+      "eyebrow": "A USEFUL DAILY CHECK-IN",
+      "labels": [],
+      "footers": [],
+      "order": 8,
+      "slug": "review-your-day"
+    },
+    {
+      "theme": "sage",
+      "title": "Your reminders.\nYour routine.",
+      "subtitle": "Choose times for food and daily reviews.\nGet local alerts when new patterns appear.",
+      "eyebrow": "GENTLE, PERSONAL REMINDERS",
+      "labels": [],
+      "footers": [],
+      "order": 9,
+      "slug": "personal-reminders"
+    },
+    {
+      "theme": "dark",
+      "title": "Your diary.\nYour control.",
+      "subtitle": "Keep your diary on your device.\nExport a report or save a backup.",
+      "eyebrow": "PRIVACY & SHARING",
+      "labels": [],
+      "footers": [],
+      "order": 10,
+      "slug": "privacy-and-reports"
+    }
+  ],
+  "ipad": [
+    {
+      "theme": "dark",
+      "title": "Your diary.\nA clearer picture.",
+      "subtitle": "Keep food, drinks and symptoms together.\nBuild a diary you can look back on.",
+      "eyebrow": "YOUR EVERYDAY DIARY",
+      "labels": [],
+      "footers": [],
+      "order": 1,
+      "slug": "your-diary"
+    },
+    {
+      "theme": "cream",
+      "title": "Scan a barcode.\nLog ingredients fast.",
+      "subtitle": "Bellywise fills in the ingredient list.\nReview it and save to your diary.",
+      "eyebrow": "QUICK FOOD & DRINK LOGGING",
+      "labels": [
+        {
+          "text": "BARCODE SCANNING",
+          "xy": [
+            304,
+            759
+          ],
+          "size": 31
+        },
+        {
+          "text": "INDIVIDUAL INGREDIENTS",
+          "xy": [
+            164,
+            1572
+          ],
+          "size": 31
+        }
+      ],
+      "footers": [
+        {
+          "text": "More ingredient detail for spotting patterns.",
+          "y": 2634
+        }
+      ],
+      "order": 2,
+      "slug": "scan-and-review"
+    },
+    {
+      "theme": "sage",
+      "title": "Find patterns.\nExplore the evidence.",
+      "subtitle": "Compare days and follow the timeline.\nSee the meals behind a possible pattern.",
+      "eyebrow": "LOOK CLOSER AT A PATTERN",
+      "labels": [
+        {
+          "text": "MILK & BLOATING · LATER THE SAME DAY",
+          "xy": [
+            164,
+            760
+          ],
+          "size": 30
+        },
+        {
+          "text": "FOLLOW THE DAYS",
+          "xy": [
+            164,
+            1747
+          ],
+          "size": 29
+        },
+        {
+          "text": "FIND THE MEALS",
+          "xy": [
+            1056,
+            1747
+          ],
+          "size": 29
+        }
+      ],
+      "footers": [],
+      "order": 3,
+      "slug": "explore-patterns"
+    },
+    {
+      "theme": "cream",
+      "title": "Make room for\nhow you feel.",
+      "subtitle": "Track symptoms and positive feelings.\nChoose your own options and intensity.",
+      "eyebrow": "YOUR SYMPTOMS, YOUR WORDS",
+      "labels": [],
+      "footers": [],
+      "order": 4,
+      "slug": "log-how-you-feel"
+    },
+    {
+      "theme": "cream",
+      "title": "Put your day\nin context.",
+      "subtitle": "Record stress and sleep, then review your day.\nHelp your diary tell a more complete story.",
+      "eyebrow": "A USEFUL DAILY CHECK-IN",
+      "labels": [],
+      "footers": [],
+      "order": 5,
+      "slug": "review-your-day"
+    },
+    {
+      "theme": "cream",
+      "title": "Get to know\nyour ingredients.",
+      "subtitle": "Tap an ingredient to read its background\nand the available symptom context.",
+      "eyebrow": "INFORMATION WITH CONTEXT",
+      "labels": [],
+      "footers": [
+        {
+          "text": "Ingredient background · Where it is found · Symptom context",
+          "y": 2472
+        }
+      ],
+      "order": 6,
+      "slug": "ingredient-information"
+    },
+    {
+      "theme": "sand",
+      "title": "Same meal.\nA simpler log.",
+      "subtitle": "Reuse meals with their recorded ingredients.\nChange the time and edit anything different.",
+      "eyebrow": "LEFTOVERS MADE EASY",
+      "labels": [],
+      "footers": [],
+      "order": 7,
+      "slug": "reuse-a-meal"
+    },
+    {
+      "theme": "sage",
+      "title": "A gentler way\nto understand.",
+      "subtitle": "Explore guides to food and symptoms\nand what your patterns can tell you.",
+      "eyebrow": "KNOWLEDGE, WITHOUT THE OVERWHELM",
+      "labels": [],
+      "footers": [],
+      "order": 8,
+      "slug": "discover-guides"
+    },
+    {
+      "theme": "sage",
+      "title": "Your reminders.\nYour routine.",
+      "subtitle": "Choose times for food and daily reviews.\nGet local alerts when new patterns appear.",
+      "eyebrow": "GENTLE, PERSONAL REMINDERS",
+      "labels": [],
+      "footers": [],
+      "order": 9,
+      "slug": "personal-reminders"
+    },
+    {
+      "theme": "dark",
+      "title": "Your diary.\nYour control.",
+      "subtitle": "Keep your diary on your device.\nExport a report or save a backup.",
+      "eyebrow": "PRIVACY & SHARING",
+      "labels": [],
+      "footers": [],
+      "order": 10,
+      "slug": "privacy-and-reports"
+    }
+  ]
+}

@@ -1,6 +1,9 @@
 import type { AppData } from '../domain/types';
 import { BUILT_IN_SYMPTOMS } from '../domain/symptoms';
 import { localDateKey } from '../domain/dates';
+import { isAppLocale } from '../i18n/locales';
+import { REGION_CODES } from '../i18n/regions';
+import type { LocalePreferences } from '../i18n';
 
 export interface SavedDiary {
   version: 1;
@@ -8,6 +11,7 @@ export interface SavedDiary {
   selectedSymptoms: string[];
   welcomed: boolean;
   lastDailyReviewPromptDate?: string;
+  localePreferences?: LocalePreferences;
 }
 
 export const emptyData = (): AppData => ({ meals: [], symptoms: [], checkIns: [], customSymptoms: [], customIngredients: [], notificationPreferences: { foodRemindersEnabled: false, foodReminderTimes: [{ key: 'food-1', hour: 8, minute: 0 }], dayReviewReminderEnabled: false, dayReviewReminderHour: 20, dayReviewReminderMinute: 30, patternAlertsEnabled: false, notifiedPatternKeys: [] } });
@@ -30,6 +34,9 @@ export function parseDiary(raw: string): SavedDiary {
   if (!record(value) || value.version !== 1 || !record(value.data) || !list(value.selectedSymptoms) ||
     !value.selectedSymptoms.every(identifier) || typeof value.welcomed !== 'boolean') throw new Error('This is not a supported diary backup.');
   if (value.lastDailyReviewPromptDate !== undefined && !calendarDate(value.lastDailyReviewPromptDate)) throw new Error('The daily review reminder date is invalid.');
+  if (value.localePreferences !== undefined && (!record(value.localePreferences) ||
+    !(value.localePreferences.language === 'system' || isAppLocale(value.localePreferences.language)) ||
+    !(value.localePreferences.region === 'system' || REGION_CODES.includes(value.localePreferences.region)))) throw new Error('The language or country setting is invalid.');
   const d = value.data;
   if (!list(d.meals) || !list(d.symptoms) || !list(d.checkIns) || !list(d.customSymptoms)) throw new Error('The backup is incomplete.');
   const validIngredients = (v: unknown) => list(v) && v.length <= 500 && v.every(i => record(i) && identifier(i.id) && name(i.name, 300) && ['confirmed', 'inferred'].includes(i.confidence) && (i.excludedComponents === undefined || (list(i.excludedComponents) && i.excludedComponents.every(identifier))) && (i.derivedFrom === undefined || identifier(i.derivedFrom)));

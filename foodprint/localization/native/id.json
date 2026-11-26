@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Pindai kode batang produk dan foto daftar bahan sehingga Bellywise dapat membantu Anda mencatat makanan dan minuman.",
+    "NSPhotoLibraryUsageDescription": "Pilih foto label bahan untuk dibaca secara pribadi di perangkat ini."
+  }
+}

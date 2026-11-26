@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Skanuj kody kreskowe produktów i fotografuj listy składników, aby firma Bellywise mogła pomóc Ci rejestrować jedzenie i napoje.",
+    "NSPhotoLibraryUsageDescription": "Wybierz zdjęcie etykiety składnika, które chcesz przeczytać prywatnie na tym urządzeniu."
+  }
+}

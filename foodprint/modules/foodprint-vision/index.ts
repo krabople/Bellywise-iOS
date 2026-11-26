@@ -15,7 +15,7 @@ export interface IngredientOcrResult {
 }
 
 interface FoodprintVisionNativeModule {
-  recognizeText(uri: string): Promise<IngredientOcrResult>;
+  recognizeText(uri: string, preferredLanguages: string[]): Promise<IngredientOcrResult>;
 }
 
 export default requireOptionalNativeModule<FoodprintVisionNativeModule>('FoodprintVision');

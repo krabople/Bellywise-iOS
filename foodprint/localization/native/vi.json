@@ -1,0 +1,6 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Quét mã vạch sản phẩm và chụp ảnh danh sách thành phần để Bellywise có thể giúp bạn ghi lại thực phẩm và đồ uống.",
+    "NSPhotoLibraryUsageDescription": "Chọn ảnh nhãn thành phần để đọc riêng trên thiết bị này."
+  }
+}

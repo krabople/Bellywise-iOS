@@ -5,6 +5,7 @@ Contains information from [Open Food Facts contributors](https://world.openfoodf
 The following adapted databases are distributed under ODbL 1.0. Complete, unrestricted machine-readable copies are available free of charge:
 
 - [Ingredient taxonomy JSON](https://raw.githubusercontent.com/krabople/Bellywise-iOS/main/foodprint/src/data/openFoodFactsIngredients.json).
+- [Multilingual ingredient names and aliases JSON](https://raw.githubusercontent.com/krabople/Bellywise-iOS/main/foodprint/src/data/internationalIngredients.json), adapted from the same pinned Open Food Facts revision. Translated names retain Bellywise's existing canonical ingredient IDs; ambiguous names are not used to merge substances. Supplemental translations of curated names are included in the same ODbL database.
 - [Brand taxonomy JSON](https://raw.githubusercontent.com/krabople/Bellywise-iOS/main/foodprint/src/data/openFoodFactsBrands.json).
 - [Food guide with ingredient mappings JSON](https://raw.githubusercontent.com/krabople/Bellywise-iOS/main/foodprint/src/data/extendedFoodGuide.json). The USDA source descriptions are public domain / CC0; the adapted ingredient-mapping database uses Open Food Facts taxonomy and Bellywise curated entries and is distributed under ODbL 1.0.
 
