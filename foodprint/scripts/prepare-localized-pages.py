@@ -22,6 +22,13 @@ class LocalPage(HTMLParser):
     def handle_data(self,data):
         source=unescape(data).strip();translated=catalogs.get(self.locale,{}).get(source,source)
         if self.skip:self.parts.append(data);return
+        # Keep the app brand and publisher's proper name unchanged.
+        if source.endswith(' · Bellywise'):
+            translated=translated.rsplit(' · ',1)[0]+' · Bellywise'
+        if source=='Bellywise support':
+            translated=catalogs.get(self.locale,{}).get('Support','Support')+' · Bellywise'
+        if source=='Bellywise is provided by Benjamin David Berger.':
+            translated=source
         start=re.match(r'^\s*',data)[0];end=re.search(r'\s*$',data)[0]
         self.parts.append(start+escape(translated)+end if source else data)
     def handle_entityref(self,name):self.parts.append('&'+name+';')

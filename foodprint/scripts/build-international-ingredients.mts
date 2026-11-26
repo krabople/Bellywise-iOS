@@ -16,5 +16,5 @@ for(const block of text.replace(/\r/g,'').split(/\n\s*\n/)){
   }
   if(Object.keys(names).length)records.push({id:owner.id,names});
 }
-await fs.writeFile('src/data/internationalIngredients.json',JSON.stringify({source:meta.source,license:meta.license,sourceUrl:meta.sourceUrl,revision:meta.revision,generatedAt:'2026-11-26',records})+'\n');
+await fs.writeFile('src/data/internationalIngredients.json',JSON.stringify({source:meta.source,license:meta.license,sourceUrl:meta.sourceUrl.replace('/taxonomies/ingredients.txt','/taxonomies/food/ingredients.txt'),revision:meta.revision,generatedAt:'2026-11-26',records})+'\n');
 console.log(JSON.stringify({records:records.length,aliases:records.reduce((n,row)=>n+Object.values(row.names).flat().length,0),languages:new Set(records.flatMap(row=>Object.keys(row.names))).size}));
