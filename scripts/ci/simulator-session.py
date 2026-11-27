@@ -278,7 +278,7 @@ class Session:
                         process_code, processes = self.simctl('spawn', device, 'launchctl', 'list', name=f'app-launch-{launch_attempt}-live-processes', timeout=30)
                         live_pid = running_pid(processes, self.bundle) if not process_code else None
                         if not live_pid and Path(app).is_dir():
-                            host_code, host_processes = self.command(['ps', '-axo', 'pid=,command='], f'app-launch-{launch_attempt}-host-processes', timeout=20)
+                            host_code, host_processes = self.command(['ps', '-axww', '-o', 'pid=,command='], f'app-launch-{launch_attempt}-host-processes', timeout=20)
                             live_pid = host_app_pid(host_processes, device, app) if not host_code else None
                         if live_pid and not self.crash_reports(f'app-launch-{launch_attempt}-live-check'):
                             pid = live_pid
@@ -296,7 +296,7 @@ class Session:
                     # times out. Recheck after diagnostics, before issuing another
                     # launch request. This still requires subsequent visible UI proof.
                     if code == 124 and not crashes and not denied and Path(app).is_dir():
-                        host_code, host_processes = self.command(['ps', '-axo', 'pid=,command='], f'app-launch-{launch_attempt}-settled-processes', timeout=20)
+                        host_code, host_processes = self.command(['ps', '-axww', '-o', 'pid=,command='], f'app-launch-{launch_attempt}-settled-processes', timeout=20)
                         live_pid = host_app_pid(host_processes, device, app) if not host_code else None
                         if live_pid:
                             self.state['pid'] = live_pid
