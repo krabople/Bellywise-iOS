@@ -64,6 +64,8 @@ jobs:
         run: npx tsx --test tests/*.test.ts
       - name: Capture bridge refuses stale or wrong-language renders
         run: python3 tests/test_capture_bridge.py
+      - name: Capture checks distinguish unsupported scripts from loading screens
+        run: python3 tests/test_capture_screen_policy.py
       - name: Web bundle
         run: npx expo export --platform web
 

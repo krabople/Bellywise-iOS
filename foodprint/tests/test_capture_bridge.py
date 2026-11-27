@@ -18,4 +18,10 @@ class BridgeTests(unittest.TestCase):
  def test_device_selections_are_independent(self):
   phone=self.bridge.select('iphone','fr','journal');tablet=self.bridge.select('ipad','ja','ingredient')
   self.assertEqual(self.request('/fixture',device='iphone'),phone);self.assertEqual(self.request('/fixture',device='ipad'),tablet)
+ def test_background_page_cannot_confirm_a_required_modal(self):
+  expected=self.bridge.select('iphone','fr','ingredients')
+  self.assertEqual(expected['presentation'],'modal')
+  self.assertFalse(self.request('/ready',device='iphone',**{**expected,'presentation':'page'})['accepted'])
+  self.assertFalse(self.bridge.confirmed('iphone',expected))
+  self.assertTrue(self.request('/ready',device='iphone',**expected)['accepted'])
 if __name__=='__main__':unittest.main()

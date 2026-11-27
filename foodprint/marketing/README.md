@@ -10,3 +10,6 @@ The label photograph is cropped from the user's original recording and preserves
 
 The listing renderer now requires actual translated native captures under `artifacts/localized-captures/<locale>/<device>`. It fails if a required capture is absent; it cannot silently substitute an English screenshot. Original approved English listing screenshots remain unchanged. Captures are only cropped/proportionally resized and framed; captions are drawn outside the app pixels.
 The optional `capture_reuse_run` workflow input reuses a previous immutable capture app after verifying its provenance and original code signature. It avoids recompilation when only CI capture tooling changed. The recovered source SHA is written into every capture manifest. A running PID after a simctl transport timeout is only a launch-status recovery: the real welcome screen must still pass OCR verification before any localised scenes are captured.
+
+Capture acknowledgements now distinguish pages from modal scenes. Modals acknowledge only the native onShow event; scene changes first dismiss the previous modal. The generator requires the native-presentation-v1 manifest, so earlier captures cannot be silently reused. Vision uses the requested language where supported; unsupported scripts require measurable visible content, with tests that still reject the original loading-spinner image.
+

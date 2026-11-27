@@ -15,7 +15,7 @@ class FixtureBridge:
      if request.path=='/fixture':payload=owner._fixtures.get(device)
      elif request.path=='/ready':
       expected=owner._fixtures.get(device)
-      accepted=bool(expected and all(query.get(key,[''])[0]==str(expected[key]) for key in ('sequence','locale','scene')))
+      accepted=bool(expected and all(query.get(key,[''])[0]==str(expected[key]) for key in ('sequence','locale','scene','presentation')))
       if accepted:owner._ready[device]=expected.copy()
       payload={'accepted':accepted}
      else:self.send_error(404);return
@@ -27,7 +27,7 @@ class FixtureBridge:
  def select(self,device,locale,scene):
   if device not in ('iphone','ipad'):raise ValueError('Unknown capture device')
   with self._lock:
-   self._sequence+=1;value={'locale':locale,'scene':scene,'sequence':self._sequence};self._fixtures[device]=value
+   self._sequence+=1;value={'locale':locale,'scene':scene,'sequence':self._sequence,'presentation':'page' if scene in ('journal','discover') else 'modal'};self._fixtures[device]=value
    return value.copy()
  def confirmed(self,device,fixture):
   with self._lock:return self._ready.get(device)==fixture

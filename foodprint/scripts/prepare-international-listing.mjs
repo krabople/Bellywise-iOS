@@ -43,8 +43,12 @@ async function cropTabletPopup(raw){
   if(count>500){minX=Math.min(minX,left);maxX=Math.max(maxX,right);minY=Math.min(minY,y);maxY=y;}
  }
  if(maxX<minX||maxY<minY)throw new Error('No actual tablet popup bounds found');
- const left=Math.max(0,minX-16),top=Math.max(0,minY-16),width=Math.min(info.width-left,maxX-minX+33),height=Math.min(info.height-top,maxY-minY+33);
+ const left=minX,top=minY,width=maxX-minX+1,height=maxY-minY+1;
  return sharp(raw).extract({left,top,width,height}).png().toBuffer();
+}
+async function cropTabletPage(raw){
+ const {width,height}=await sharp(raw).metadata();const top=Math.round(height*.022);
+ return sharp(raw).extract({left:0,top,width,height:height-top}).png().toBuffer();
 }
 async function screenshot(locale,device,item,translate){
  const ipad=device==='ipad',width=ipad?2048:1320,height=ipad?2732:2868;
@@ -67,7 +71,7 @@ async function screenshot(locale,device,item,translate){
  await place(item.title,ipad?300:280,ipad?114:96,250,fg);
  await place(item.subtitle,ipad?570:555,ipad?43:38,140,muted);
  const box={left:ipad?220:180,top:ipad?760:760,width:ipad?1608:960,height:ipad?1840:1980};
- const appPixels=ipad&&![1,8].includes(item.order)?await cropTabletPopup(raw):raw;
+ const appPixels=ipad?(![1,8].includes(item.order)?await cropTabletPopup(raw):await cropTabletPage(raw)):raw;
  const content=await sharp(appPixels).resize(box.width,box.height,{fit:'contain',background:bg}).png().toBuffer();
  const mask=Buffer.from('<svg width="'+box.width+'" height="'+box.height+'"><rect width="100%" height="100%" rx="'+(ipad?45:50)+'" fill="white"/></svg>');
  const framed=await sharp(content).ensureAlpha().composite([{input:mask,blend:'dest-in'}]).png().toBuffer();
@@ -83,7 +87,7 @@ for(const locale of locales){
  if(!locale.startsWith('en')){
   const captureRoot=path.join(root,'artifacts/localized-captures');
   const capture=JSON.parse(await fs.readFile(path.join(captureRoot,locale,'capture-manifest.json'),'utf8'));
-  if(capture.locale!==locale||!/^[a-f0-9]{40}$/.test(capture.source)||capture.screenshots.length!==20)throw Error('Incomplete native capture manifest: '+locale);
+  if(capture.verification!=='native-presentation-v1'||capture.locale!==locale||!/^[a-f0-9]{40}$/.test(capture.source)||capture.screenshots.length!==20)throw Error('Incomplete native capture manifest: '+locale);
   for(const device of ['iphone','ipad']){
    const records=capture.screenshots.filter(record=>record.device===device);
    if(records.length!==10||new Set(records.map(record=>record.order)).size!==10)throw Error('Incomplete device captures: '+locale+'/'+device);

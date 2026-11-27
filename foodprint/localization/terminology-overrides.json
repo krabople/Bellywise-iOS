@@ -85,7 +85,8 @@
     "{0} rated {1} day{2}": "{0} jour{2} avec une intensité notée ({1})",
     "What you eat and drink. How you feel. A little more understanding.": "Ce que vous mangez et buvez. Ce que vous ressentez. Pour mieux comprendre.",
     "Had again at": "Date et heure de ce repas",
-    "What did you have again?": "Qu’avez-vous mangé à nouveau ?"
+    "What did you have again?": "Qu’avez-vous mangé à nouveau ?",
+    "Heartburn / reflux": "Brûlures d’estomac / reflux"
   },
   "fr-CA": {
     "Patterns": "Liens",

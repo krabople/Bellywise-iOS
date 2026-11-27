@@ -11,6 +11,7 @@ import { parseIngredientLabel } from './src/services/labelParser';
 import { emptyDiary } from './src/storage/schema';
 import { PhotoRegion } from './src/components/PhotoRegion';
 import { IngredientDetails } from './src/components/IngredientDetails';
+import { CapturePresentationContext } from './src/components/ui';
 import fixture from './marketing/product-fixture.json';
 
 // Separate visual-test entry point. package.json in the shipped app stays index.ts.
@@ -34,20 +35,20 @@ function stateFor(locale: AppLocale, scene: Scene): CaptureState {
  return result;
 }
 function CaptureRoot(){
- const [selection,setSelection]=useState<{locale:AppLocale;scene:Scene;state:CaptureState;sequence:number}|null>(null);
+ const [selection,setSelection]=useState<{locale:AppLocale;scene:Scene;state:CaptureState;sequence:number;ready:boolean}|null>(null);
  const seen=useRef(-1);
  const device=Dimensions.get('window').width>=760?'ipad':'iphone';
  useEffect(()=>{
-  let live=true,busy=false;
-  const apply=(locale:unknown,scene:unknown,sequence:number)=>{if(!isAppLocale(locale)||!scenes.includes(scene as Scene)||seen.current===sequence)return;seen.current=sequence;configureLocale({language:locale,region:'FR'});setSelection({locale,scene:scene as Scene,state:stateFor(locale,scene as Scene),sequence});};
-  if(Platform.OS==='web'){const query=new URL(window.location.href).searchParams;apply(query.get('locale'),query.get('scene'),0);return;}
+  let live=true,busy=false;let pending:ReturnType<typeof setTimeout>|undefined;
+  const apply=(locale:unknown,scene:unknown,sequence:number)=>{if(!isAppLocale(locale)||!scenes.includes(scene as Scene)||seen.current===sequence)return;seen.current=sequence;configureLocale({language:locale,region:'FR'});const next={locale,scene:scene as Scene,state:stateFor(locale,scene as Scene),sequence,ready:true};if(pending)clearTimeout(pending);setSelection({...next,ready:false,state:{...next.state,modal:null}});pending=setTimeout(()=>{if(live&&seen.current===sequence)setSelection(next);},900);};
+  if(Platform.OS==='web'){const query=new URL(window.location.href).searchParams;apply(query.get('locale'),query.get('scene'),0);return()=>{live=false;if(pending)clearTimeout(pending);};}
   const poll=async()=>{if(busy)return;busy=true;try{const response=await fetch('http://localhost:8769/fixture?device='+device,{cache:'no-store'});const fixture=await response.json();if(live&&fixture)apply(fixture.locale,fixture.scene,fixture.sequence);}catch{}finally{busy=false;}};
-  void poll();const timer=setInterval(()=>void poll(),350);return()=>{live=false;clearInterval(timer);};
+  void poll();const timer=setInterval(()=>void poll(),350);return()=>{live=false;clearInterval(timer);if(pending)clearTimeout(pending);};
  },[]);
- const acknowledge=()=>{if(!selection||Platform.OS==='web')return;void fetch('http://localhost:8769/ready?device='+device+'&sequence='+selection.sequence+'&locale='+encodeURIComponent(getLocale())+'&scene='+selection.scene).catch(()=>{});};
+ const acknowledge=()=>{if(!selection?.ready||Platform.OS==='web')return;void fetch('http://localhost:8769/ready?device='+device+'&sequence='+selection.sequence+'&locale='+encodeURIComponent(getLocale())+'&scene='+selection.scene+'&presentation='+(['journal','discover'].includes(selection.scene)?'page':'modal')).catch(()=>{});};
  const photo=Platform.OS==='web'?require('./marketing/assets/recorded-label.png'):Image.resolveAssetSource(require('./marketing/assets/recorded-label.png'));
  const photoUri=typeof photo==='string'?photo:photo.uri;
- return <SafeAreaProvider><App captureKey={selection?selection.locale+':'+selection.scene+':'+selection.sequence:'welcome'} capture={selection?.state} onCaptureReady={acknowledge}/>{selection?.scene==='photo'&&<PhotoRegion uri={photoUri} width={700} height={1304} onCancel={()=>{}} onConfirm={()=>{}}/>}{selection?.scene==='ingredient'&&<IngredientDetails id="milk" onClose={()=>{}}/>}</SafeAreaProvider>;
+ return <SafeAreaProvider><CapturePresentationContext.Provider value={selection?.ready?acknowledge:undefined}><App captureKey={selection?selection.locale+':'+selection.scene+':'+selection.sequence+':'+selection.ready:'welcome'} capture={selection?.state} onCaptureReady={selection?.ready&&['journal','discover'].includes(selection.scene)?acknowledge:undefined}/>{selection?.ready&&selection.scene==='photo'&&<PhotoRegion uri={photoUri} width={700} height={1304} onCancel={()=>{}} onConfirm={()=>{}}/>}{selection?.ready&&selection.scene==='ingredient'&&<IngredientDetails id="milk" onClose={()=>{}}/>}</CapturePresentationContext.Provider></SafeAreaProvider>;
 }
 
 registerRootComponent(CaptureRoot);

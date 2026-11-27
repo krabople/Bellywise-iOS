@@ -2,6 +2,7 @@
 from pathlib import Path
 import argparse,hashlib,importlib.util,json,os,re,struct,subprocess,time
 from capture_fixture_bridge import FixtureBridge
+from capture_screen_policy import visible_capture
 root=Path(__file__).resolve().parents[2]
 parser=argparse.ArgumentParser();parser.add_argument('--locales');parser.add_argument('--exclude');args=parser.parse_args()
 if os.environ.get('GITHUB_ACTIONS')!='true':raise SystemExit('Native capture is restricted to disposable GitHub CI simulators.')
@@ -49,13 +50,16 @@ try:
    scenes=['journal','ingredients','patterns','symptom','photo' if device=='iphone' else 'checkin','ingredient','repeat','checkin' if device=='iphone' else 'discover','notifications','privacy']
    for order,scene in enumerate(scenes,1):
     dest=out/locale/device;dest.mkdir(parents=True,exist_ok=True)
-    fixture=bridge.select(device,locale,scene)
-    deadline=time.time()+40
-    while time.time()<deadline:
-     confirmed=bridge.confirmed(device,fixture)
+    for presentation_attempt in (1,2):
+     fixture=bridge.select(device,locale,scene)
+     deadline=time.time()+40
+     while time.time()<deadline:
+      confirmed=bridge.confirmed(device,fixture)
+      if confirmed:break
+      time.sleep(.2)
      if confirmed:break
-     time.sleep(.2)
-    else:raise RuntimeError(f'The actual app did not confirm {locale}/{device}/{scene}; no screenshot accepted.')
+     if presentation_attempt==2:raise RuntimeError(f'The actual app did not confirm {locale}/{device}/{scene}; no screenshot accepted.')
+     print(f'Retrying native presentation: {locale}/{device}/{scene}',flush=True)
     # The app acknowledges a committed render; allow modal animation/image decode.
     time.sleep(1.2)
     file=dest/f'{order:02d}-{scene}.png'
@@ -70,18 +74,16 @@ try:
       print(f'Retrying simulator screenshot transport: {locale}/{device}/{scene}',flush=True)
       time.sleep(2)
     # Never accept a loading spinner or a system sheet as an app screenshot.
-    evidence=json.loads(subprocess.check_output([str(root/'artifacts/read-simulator-screen'),str(file)],timeout=90))
+    evidence=json.loads(subprocess.check_output([str(root/'artifacts/read-simulator-screen'),str(file),locale],timeout=90))
     (dest/f'{order:02d}-{scene}-ocr.json').write_text(json.dumps(evidence,ensure_ascii=False))
-    lines=evidence.get('lines',[])
-    text=' '.join(lines).lower()
-    if len(lines)<5 or 'open in bellywise' in text:
+    if not visible_capture(evidence):
      raise RuntimeError(f'Visible app content was not verified for {locale}/{device}/{scene}; screenshot rejected.')
     raw=file.read_bytes();width,height=struct.unpack('>II',raw[16:24]);assert width>1000 and height>2000
     records[locale].append({'device':device,'order':order,'scene':scene,'file':str(file.relative_to(out)),'width':width,'height':height,'sha256':hashlib.sha256(raw).hexdigest()})
   session.cleanup()
   sessions.pop(device)
  for locale in locales:
-  (out/locale/'capture-manifest.json').write_text(json.dumps({'locale':locale,'source':os.environ.get('CAPTURE_SOURCE_SHA',os.environ.get('GITHUB_SHA')),'renderer':'actual iOS Simulator capture entry point, shared production components','screenshots':records[locale]},indent=2))
+  (out/locale/'capture-manifest.json').write_text(json.dumps({'locale':locale,'verification':'native-presentation-v1','source':os.environ.get('CAPTURE_SOURCE_SHA',os.environ.get('GITHUB_SHA')),'renderer':'actual iOS Simulator capture entry point, shared production components','screenshots':records[locale]},indent=2))
   print(f'Captured {locale}: {len(records[locale])} actual iOS screenshots.',flush=True)
 finally:
  bridge.stop()
