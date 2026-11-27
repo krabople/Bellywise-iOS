@@ -25,12 +25,18 @@ on:
         type: boolean
         default: false
 
+      capture_compile_only:
+        description: 'Compile and verify the capture app without running screenshot scenes'
+        required: false
+        type: boolean
+        default: false
+
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: bellywise-checks-${{ github.ref }}
+  group: bellywise-checks-${{ github.ref }}-${{ inputs.capture_batches && 'batches' || 'build' }}
   cancel-in-progress: true
 
 jobs:
@@ -92,7 +98,7 @@ jobs:
       - name: Compile and launch iOS Simulator app
         run: bash scripts/ci/build-ios.sh
       - name: Capture French iPhone and iPad screens first
-        if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures'
+        if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures' && !inputs.capture_compile_only
         run: DEVELOPER_DIR="$(cat artifacts/xcode-developer-dir.txt)" python3 scripts/ci/capture-localized.py --locales fr
       - name: Keep French native captures for visual review
         if: always() && github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures'
@@ -103,7 +109,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
       - name: Capture remaining listing languages
-        if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures'
+        if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures' && !inputs.capture_compile_only
         run: DEVELOPER_DIR="$(cat artifacts/xcode-developer-dir.txt)" python3 scripts/ci/capture-localized.py --exclude fr
       - name: Keep all translated native captures
         if: always() && github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures'
