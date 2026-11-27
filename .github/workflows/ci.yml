@@ -121,6 +121,14 @@ jobs:
             artifacts/Bellywise-simulator.zip
           if-no-files-found: warn
           retention-days: 7
+      - name: Keep capture diagnostics
+        if: always() && github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures'
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bellywise-capture-diagnostics
+          path: artifacts/capture-session-*
+          if-no-files-found: warn
+          retention-days: 7
 
   capture-reuse:
     if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures' && inputs.capture_reuse_run != ''

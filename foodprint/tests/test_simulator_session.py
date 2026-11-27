@@ -87,6 +87,12 @@ class SimulatorTests(unittest.TestCase):
         self.assertIsNone(module.running_pid('39484\t0\tUIKitApplication:' + BUNDLE + '.quicklog[5516]', BUNDLE))
         self.assertIsNone(module.running_pid('-\t0\tUIKitApplication:' + BUNDLE + '[5516]', BUNDLE))
 
+    def test_host_process_recovery_is_bound_to_device_and_executable(self):
+        process='  39484 /Users/runner/Library/Developer/CoreSimulator/Devices/DEVICE/data/Containers/Bundle/Application/INSTALL/Bellywise.app/Bellywise'
+        self.assertEqual(module.host_app_pid(process,'DEVICE','/compiled/Bellywise.app'),39484)
+        self.assertIsNone(module.host_app_pid(process,'OTHER','/compiled/Bellywise.app'))
+        self.assertIsNone(module.host_app_pid(process,'DEVICE','/compiled/Another.app'))
+
     @patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'})
     @patch.object(module.time, 'sleep')
     def test_timeout_with_running_main_app_recovers_pid_without_second_launch(self, _sleep):

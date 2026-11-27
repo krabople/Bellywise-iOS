@@ -71,6 +71,17 @@ def running_pid(output, bundle):
     return int(match[1]) if match else None
 
 
+def host_app_pid(output, device, app):
+    """Match the executable in this exact simulator's installed app container."""
+    marker = '/Devices/' + device + '/'
+    suffix = '/' + Path(app).name + '/' + Path(app).stem
+    for line in output.splitlines():
+        match = re.match(r'^\s*([1-9]\d*)\s+(.+)$', line)
+        if match and marker in match[2] and re.search(re.escape(suffix) + r'(?:\s|$)', match[2]):
+            return int(match[1])
+    return None
+
+
 def crash_details(raw, bundle):
     """Apple IPS crash reports contain a one-line metadata JSON and a report JSON."""
     first_line, separator, remainder = raw.partition('\n')
@@ -266,6 +277,9 @@ class Session:
                     if not pid and code == 124 and not denied:
                         process_code, processes = self.simctl('spawn', device, 'launchctl', 'list', name=f'app-launch-{launch_attempt}-live-processes', timeout=30)
                         live_pid = running_pid(processes, self.bundle) if not process_code else None
+                        if not live_pid and Path(app).is_dir():
+                            host_code, host_processes = self.command(['ps', '-axo', 'pid=,command='], f'app-launch-{launch_attempt}-host-processes', timeout=20)
+                            live_pid = host_app_pid(host_processes, device, app) if not host_code else None
                         if live_pid and not self.crash_reports(f'app-launch-{launch_attempt}-live-check'):
                             pid = live_pid
                             if pid:
@@ -278,6 +292,17 @@ class Session:
                     self.report('LAUNCH FAILURE AFTER HEALTHY BOOT: ' + output.strip()[:1500])
                     crashes = self.diagnose(f'{tag}-launch-{launch_attempt}')
                     denied = re.search(r'request was denied|RequestDenied|SBMainWorkspace|Code Signature Invalid|Namespace CODESIGNING', output, re.I)
+                    # CoreSimulator can finish launching just after its command
+                    # times out. Recheck after diagnostics, before issuing another
+                    # launch request. This still requires subsequent visible UI proof.
+                    if code == 124 and not crashes and not denied and Path(app).is_dir():
+                        host_code, host_processes = self.command(['ps', '-axo', 'pid=,command='], f'app-launch-{launch_attempt}-settled-processes', timeout=20)
+                        live_pid = host_app_pid(host_processes, device, app) if not host_code else None
+                        if live_pid:
+                            self.state['pid'] = live_pid
+                            self.save()
+                            self.report('The exact simulator app finished launching during diagnostics. Welcome verification is still required.')
+                            return
                     if code == 124 and launch_attempt == 1 and crashes == [] and not denied:
                         # The first request may have started the app despite simctl
                         # timing out. A second non-terminating launch retrieves its PID.
