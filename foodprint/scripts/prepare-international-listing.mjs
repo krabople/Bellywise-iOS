@@ -32,6 +32,18 @@ async function textImage(text,locale,color,width,maxHeight,size){
  }
  throw new Error(`Caption does not fit: ${locale}: ${text}`);
 }
+async function cropTabletPopup(raw){
+ const {data,info}=await sharp(raw).removeAlpha().raw().toBuffer({resolveWithObject:true});
+ let minX=info.width,minY=info.height,maxX=-1,maxY=-1;
+ for(let y=0;y<info.height;y++){
+  let count=0,left=info.width,right=-1;
+  for(let x=0;x<info.width;x++){const i=(y*info.width+x)*info.channels;if(data[i]>=250&&data[i+1]>=250&&data[i+2]>=250){count++;left=Math.min(left,x);right=x;}}
+  if(count>500){minX=Math.min(minX,left);maxX=Math.max(maxX,right);minY=Math.min(minY,y);maxY=y;}
+ }
+ if(maxX<minX||maxY<minY)throw new Error('No actual tablet popup bounds found');
+ const left=Math.max(0,minX-16),top=Math.max(0,minY-16),width=Math.min(info.width-left,maxX-minX+33),height=Math.min(info.height-top,maxY-minY+33);
+ return sharp(raw).extract({left,top,width,height}).png().toBuffer();
+}
 async function screenshot(locale,device,item,translate){
  const ipad=device==='ipad',width=ipad?2048:1320,height=ipad?2732:2868;
  const filename=String(item.order).padStart(2,'0')+'-'+item.slug+'.png';
@@ -55,7 +67,8 @@ async function screenshot(locale,device,item,translate){
  await place(item.title,ipad?300:280,ipad?114:96,250,fg);
  await place(item.subtitle,ipad?570:555,ipad?43:38,140,muted);
  const box={left:ipad?220:180,top:ipad?760:760,width:ipad?1608:960,height:ipad?1840:1980};
- const content=await sharp(raw).resize(box.width,box.height,{fit:'contain',background:bg}).png().toBuffer();
+ const appPixels=ipad&&![1,8].includes(item.order)?await cropTabletPopup(raw):raw;
+ const content=await sharp(appPixels).resize(box.width,box.height,{fit:'contain',background:bg}).png().toBuffer();
  const mask=Buffer.from('<svg width="'+box.width+'" height="'+box.height+'"><rect width="100%" height="100%" rx="'+(ipad?45:50)+'" fill="white"/></svg>');
  const framed=await sharp(content).ensureAlpha().composite([{input:mask,blend:'dest-in'}]).png().toBuffer();
  patches.push({input:framed,left:box.left,top:box.top});
@@ -99,4 +112,6 @@ for(const locale of locales){
  manifest.push({locale,preview:metadata.previewPolicy,screenshots:files,issues:metadata.issues});
  console.log(`Prepared ${locale}: 20 screenshots; description ${metadata.description.length} characters.`);
 }
-await fs.writeFile(path.join(output,'manifest.json'),JSON.stringify(manifest,null,2)+'\n');
+let previous=[];try{previous=JSON.parse(await fs.readFile(path.join(output,'manifest.json'),'utf8'));}catch{}
+const merged=new Map([...previous,...manifest].map(item=>[item.locale,item]));
+await fs.writeFile(path.join(output,'manifest.json'),JSON.stringify(allLocales.map(locale=>merged.get(locale)).filter(Boolean),null,2)+'\n');

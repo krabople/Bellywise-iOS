@@ -125,3 +125,16 @@ test('French decimal percentages preserve whole milk-powder and cocoa ingredient
   assert.equal(ids.some(id => id.startsWith('custom-')), false);
   configureLocale({ language: 'en-GB', region: 'GB' });
 });
+
+test('the real example diary uses localised meal names without changing ingredient evidence', () => {
+  configureLocale({ language: 'en-GB', region: 'GB' });
+  const english = getDemoData(new Date('2026-11-27T12:00:00'));
+  configureLocale({ language: 'fr', region: 'FR' });
+  const french = getDemoData(new Date('2026-11-27T12:00:00'));
+  assert.notEqual(french.meals[0].name, english.meals[0].name);
+  assert.equal(french.meals[1].name, t(english.meals[1].name));
+  assert.deepEqual(french.meals.map(meal => meal.ingredients), english.meals.map(meal => meal.ingredients));
+  const milkCounts = (data: typeof english) => analyzePatterns(data).patterns.filter(p => p.ingredientId === 'milk').map(p => [p.symptomId,p.window,p.exposedDays,p.exposedSymptomDays,p.unexposedDays,p.unexposedSymptomDays]);
+  assert.deepEqual(milkCounts(french), milkCounts(english));
+  configureLocale({ language: 'en-GB', region: 'GB' });
+});

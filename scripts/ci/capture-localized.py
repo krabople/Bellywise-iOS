@@ -13,7 +13,7 @@ def select(data,sdk,family='iPhone'):
  if installed:device=installed['identifier']
  return runtime,device
 module.select_device=select
-app=next((root/'artifacts/ios-derived-data/Build/Products/Release-iphonesimulator').glob('*.app'))
+app=Path(os.environ['CAPTURE_PREBUILT_APP']) if os.environ.get('CAPTURE_PREBUILT_APP') else next((root/'artifacts/ios-derived-data/Build/Products/Release-iphonesimulator').glob('*.app'))
 bundle=json.loads(subprocess.check_output(['plutil','-convert','json','-o','-',str(app/'Info.plist')]))['CFBundleIdentifier']
 sdk=subprocess.check_output(['xcrun','--sdk','iphonesimulator','--show-sdk-version'],text=True).strip()
 locales=re.findall(r"\['([^']+)', '",(root/'foodprint/src/i18n/locales.ts').read_text().split('] as const')[0])
@@ -26,7 +26,19 @@ try:
   directory=root/'artifacts'/('capture-session-'+device);directory.mkdir(exist_ok=True)
   session=module.Session(directory,bundle);sessions[device]=session
   # Reuse only devices this same CI run created in the first capture phase.
-  if not session.state['created']:session.start(str(app),sdk,family)
+  if not session.state['created']:
+   session.start(str(app),sdk,family)
+   # Process existence alone never establishes a successful app startup.
+   verified=False
+   for attempt in range(6):
+    screen=directory/'welcome.png';ocr=directory/'welcome-ocr.json'
+    subprocess.run(['xcrun','simctl','io',session.state['device'],'screenshot','--type=png',str(screen)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    ocr.write_bytes(subprocess.check_output([str(root/'artifacts/read-simulator-screen'),str(screen)]))
+    check=subprocess.run(['node',str(root/'scripts/ci/verify-native-screen.mjs'),str(ocr)])
+    if check.returncode==0:verified=True;break
+    if check.returncode!=3:raise RuntimeError('The actual native app displayed an error screen.')
+    time.sleep(3)
+   if not verified:raise RuntimeError('The actual native welcome screen was not confirmed.')
   identifier=session.state['device']
   subprocess.run(['xcrun','simctl','status_bar',identifier,'override','--time','9:41','--dataNetwork','wifi','--wifiMode','active','--wifiBars','3','--batteryState','charged','--batteryLevel','100'],check=True)
   subprocess.run(['xcrun','simctl','ui',identifier,'appearance','light'],check=True)
@@ -43,7 +55,7 @@ try:
     subprocess.run(['xcrun','simctl','io',session.state['device'],'screenshot','--type=png',str(file)],check=True,timeout=30,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     raw=file.read_bytes();width,height=struct.unpack('>II',raw[16:24]);assert width>1000 and height>2000
     records.append({'device':device,'order':order,'scene':scene,'file':str(file.relative_to(out)),'width':width,'height':height,'sha256':hashlib.sha256(raw).hexdigest()})
-  (out/locale/'capture-manifest.json').write_text(json.dumps({'locale':locale,'source':os.environ.get('GITHUB_SHA'),'renderer':'actual iOS Simulator capture entry point, shared production components','screenshots':records},indent=2))
+  (out/locale/'capture-manifest.json').write_text(json.dumps({'locale':locale,'source':os.environ.get('CAPTURE_SOURCE_SHA',os.environ.get('GITHUB_SHA')),'renderer':'actual iOS Simulator capture entry point, shared production components','screenshots':records},indent=2))
   print(f'Captured {locale}: {len(records)} actual iOS screenshots.',flush=True)
 finally:
  if not args.keep_devices:

@@ -12,9 +12,16 @@ on:
       - 'scripts/ci/**'
       - '.github/workflows/ci.yml'
   workflow_dispatch:
+    inputs:
+      capture_reuse_run:
+        description: 'Optional run containing the immutable isolated capture simulator app'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: bellywise-checks-${{ github.ref }}
@@ -47,6 +54,7 @@ jobs:
         run: npx expo export --platform web
 
   ios-compile:
+    if: github.event_name != 'workflow_dispatch' || github.ref_name != 'codex/localised-screen-captures' || inputs.capture_reuse_run == ''
     needs: app-checks
     runs-on: macos-26
     timeout-minutes: 150
@@ -102,5 +110,57 @@ jobs:
             artifacts/*.crash
             artifacts/simulator-devices.json
             artifacts/Bellywise-simulator.zip
+          if-no-files-found: warn
+          retention-days: 7
+
+  capture-reuse:
+    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures' && inputs.capture_reuse_run != ''
+    needs: app-checks
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v8
+        with:
+          name: Bellywise-ios-simulator
+          run-id: ${{ inputs.capture_reuse_run }}
+          github-token: ${{ github.token }}
+          path: artifacts/reused-source
+      - name: Verify immutable capture app and select Xcode
+        env:
+          CAPTURE_REUSE_RUN: ${{ inputs.capture_reuse_run }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/prepare-capture-reuse.py
+      - name: Capture French screens with verified native startup
+        run: python3 scripts/ci/capture-localized.py --locales fr --keep-devices
+      - name: Keep French native captures for visual review
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bellywise-French-native-captures
+          path: artifacts/localized-captures/fr
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Capture remaining listing languages
+        run: python3 scripts/ci/capture-localized.py --exclude fr
+      - name: Keep all translated native captures
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bellywise-all-localised-native-captures
+          path: artifacts/localized-captures
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Keep capture diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bellywise-capture-diagnostics
+          path: artifacts/capture-session-*
           if-no-files-found: warn
           retention-days: 7

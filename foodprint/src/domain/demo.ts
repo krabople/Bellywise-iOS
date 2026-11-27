@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { addDays, localDateKey } from './dates';
 import { ingredientsFromNames } from './foods';
 import { BUILT_IN_SYMPTOMS } from './symptoms';
@@ -20,17 +21,17 @@ export function getDemoData(referenceDate: Date = new Date()): AppData {
         : { name: 'Rice pudding with blueberries', ingredients: ['Rice', 'Milk', 'Lactose', 'Blueberries'] };
     result.checkIns.push({ date: day, complete: true, trackedSymptomIds: BUILT_IN_SYMPTOMS.map(item => item.id), stress: (highStress ? 4 : 2) as Level, sleepHours: highStress ? 6 : 7.5 });
     result.meals.push({
-      id: `demo-breakfast-${index}`, name: hasMilk ? dairyBreakfast.name : 'Oats with blueberries',
+      id: `demo-breakfast-${index}`, name: t(hasMilk ? dairyBreakfast.name : 'Oats with blueberries'),
       eatenAt: new Date(`${day}T08:15:00`).toISOString(), source: 'typed',
       ingredients: ingredientsFromNames(hasMilk ? dairyBreakfast.ingredients : ['Oats', 'Blueberries']),
     });
     result.meals.push({
-      id: `demo-lunch-${index}`, name: wheat ? 'Chicken sandwich' : 'Chicken and rice bowl',
+      id: `demo-lunch-${index}`, name: t(wheat ? 'Chicken sandwich' : 'Chicken and rice bowl'),
       eatenAt: new Date(`${day}T12:30:00`).toISOString(), source: 'typed',
       ingredients: ingredientsFromNames(wheat ? ['Wheat', 'Chicken', 'Lettuce'] : ['Rice', 'Chicken', 'Carrot']),
     });
     result.meals.push({
-      id: `demo-dinner-${index}`, name: index % 2 ? 'Salmon, rice and greens' : 'Roast chicken and potatoes',
+      id: `demo-dinner-${index}`, name: t(index % 2 ? 'Salmon, rice and greens' : 'Roast chicken and potatoes'),
       eatenAt: new Date(`${day}T18:45:00`).toISOString(), source: 'typed',
       ingredients: ingredientsFromNames(index % 2 ? ['Salmon', 'Rice', 'Spinach', 'Olive oil'] : ['Chicken', 'Potato', 'Carrot', 'Olive oil']),
     });

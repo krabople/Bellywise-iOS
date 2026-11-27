@@ -65,6 +65,12 @@ def launch_pid(returncode, output, bundle):
     return int(match[1]) if match else None
 
 
+def running_pid(output, bundle):
+    """Recover a live main-app PID when simctl's launch transport times out."""
+    match = re.search(r'^([1-9]\d*)\s+\S+\s+UIKitApplication:' + re.escape(bundle) + r'\[', output, re.M)
+    return int(match[1]) if match else None
+
+
 def crash_details(raw, bundle):
     """Apple IPS crash reports contain a one-line metadata JSON and a report JSON."""
     first_line, separator, remainder = raw.partition('\n')
@@ -256,6 +262,14 @@ class Session:
                         '--stdout=' + str(self.directory / 'app-stdout.log'), '--stderr=' + str(self.directory / 'app-stderr.log'),
                         device, self.bundle, name=f'app-launch-{launch_attempt}', timeout=120)
                     pid = launch_pid(code, output, self.bundle)
+                    denied = re.search(r'request was denied|RequestDenied|SBMainWorkspace|Code Signature Invalid|Namespace CODESIGNING', output, re.I)
+                    if not pid and code == 124 and not denied:
+                        process_code, processes = self.simctl('spawn', device, 'launchctl', 'list', name=f'app-launch-{launch_attempt}-live-processes', timeout=30)
+                        live_pid = running_pid(processes, self.bundle) if not process_code else None
+                        if live_pid and not self.crash_reports(f'app-launch-{launch_attempt}-live-check'):
+                            pid = live_pid
+                            if pid:
+                                self.report('Launch transport timed out, but the exact main app is running. Actual welcome-screen verification is still required.')
                     if pid:
                         self.state['pid'] = pid
                         self.save()

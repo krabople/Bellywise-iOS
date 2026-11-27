@@ -52,7 +52,7 @@ class SimulatorTests(unittest.TestCase):
         self.assertIsNone(module.launch_pid(0, 'another.app: 12345', BUNDLE))
         self.assertIsNone(module.launch_pid(0, 'FBSOpenApplicationServiceErrorDomain: 1', BUNDLE))
 
-    def scenario(self, outcomes, launches=None):
+    def scenario(self, outcomes, launches=None, processes=''):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         session = module.Session(temporary.name, BUNDLE)
@@ -73,12 +73,28 @@ class SimulatorTests(unittest.TestCase):
                 return next(boots)
             if args[0] == 'launch':
                 return next(launch_results) if launch_results else (0, BUNDLE + ': 12345')
+            if args[0] == 'spawn' and 'launchctl' in args:
+                return 0, processes
             return 0, ''
 
         session.simctl = simctl
         session.diagnose = lambda name='final': []
         session.report = lambda message: None
         return session, commands, created
+
+    def test_running_pid_requires_exact_main_app_and_live_pid(self):
+        self.assertEqual(module.running_pid('39484\t0\tUIKitApplication:' + BUNDLE + '[5516][rb-legacy]', BUNDLE), 39484)
+        self.assertIsNone(module.running_pid('39484\t0\tUIKitApplication:' + BUNDLE + '.quicklog[5516]', BUNDLE))
+        self.assertIsNone(module.running_pid('-\t0\tUIKitApplication:' + BUNDLE + '[5516]', BUNDLE))
+
+    @patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'})
+    @patch.object(module.time, 'sleep')
+    def test_timeout_with_running_main_app_recovers_pid_without_second_launch(self, _sleep):
+        session, commands, _created = self.scenario([(0, FINISHED)], [(124, 'timed out')], '39484\t0\tUIKitApplication:' + BUNDLE + '[5516]')
+        session.crash_reports = lambda name='final': []
+        session.start('/compiled/Bellywise.app', '26.5')
+        self.assertEqual(session.state['pid'], 39484)
+        self.assertEqual(len([c for c in commands if c[0] == 'launch']), 1)
 
     @patch.dict(os.environ, {'GITHUB_ACTIONS': 'true'})
     @patch.object(module.time, 'sleep')
