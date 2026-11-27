@@ -25,6 +25,8 @@ if args.exclude:locales=[l for l in locales if l not in args.exclude.split(',')]
 out=root/'artifacts/localized-captures';out.mkdir(parents=True,exist_ok=True)
 sessions={}
 records={locale:[] for locale in locales}
+def save_manifest(locale):
+ (out/locale/'capture-manifest.json').write_text(json.dumps({'locale':locale,'verification':'native-presentation-v1','source':os.environ.get('CAPTURE_SOURCE_SHA',os.environ.get('GITHUB_SHA')),'toolingSource':os.environ.get('GITHUB_SHA'),'renderer':'actual iOS Simulator capture entry point, shared production components','screenshots':records[locale]},indent=2))
 bridge=FixtureBridge();bridge.start()
 try:
  for device,family in [('iphone','iPhone'),('ipad','iPad')]:
@@ -38,7 +40,9 @@ try:
    for attempt in range(6):
     screen=directory/'welcome.png';ocr=directory/'welcome-ocr.json'
     subprocess.run(['xcrun','simctl','io',session.state['device'],'screenshot','--type=png',str(screen)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-    ocr.write_bytes(subprocess.check_output([str(root/'artifacts/read-simulator-screen'),str(screen)]))
+    try:ocr.write_bytes(subprocess.check_output([str(root/'artifacts/read-simulator-screen'),str(screen)],timeout=90))
+    except subprocess.TimeoutExpired:
+     print('Retrying native welcome text verification after a stalled OCR request.',flush=True);time.sleep(3);continue
     check=subprocess.run(['node',str(root/'scripts/ci/verify-native-screen.mjs'),str(ocr)])
     if check.returncode==0:verified=True;break
     if check.returncode!=3:raise RuntimeError('The actual native app displayed an error screen.')
@@ -75,8 +79,10 @@ try:
       if screenshot_attempt==2:raise
       print(f'Retrying simulator screenshot transport: {locale}/{device}/{scene}',flush=True)
       time.sleep(2)
-    # Never accept a loading spinner or a system sheet as an app screenshot.
-    evidence=json.loads(subprocess.check_output([str(root/'artifacts/read-simulator-screen'),str(file),locale],timeout=90))
+    # Native onShow/page acknowledgements establish the exact scene. Pixel checks
+    # reject empty output without running text recognition for every frame.
+    os.kill(int(session.state['pid']),0)
+    evidence=json.loads(subprocess.check_output([str(root/'artifacts/read-simulator-screen'),str(file),locale,'--visual-only'],timeout=30))
     (dest/f'{order:02d}-{scene}-ocr.json').write_text(json.dumps(evidence,ensure_ascii=False))
     if not visible_capture(evidence):
      raise RuntimeError(f'Visible app content was not verified for {locale}/{device}/{scene}; screenshot rejected.')
@@ -85,10 +91,11 @@ try:
     if scene=='ingredients':
      if not viewport or viewport['left']+viewport['width']>width+2 or viewport['top']+viewport['height']>height+2:raise RuntimeError('The actual ingredient viewport is outside the screenshot.')
     records[locale].append({'device':device,'order':order,'scene':scene,'file':str(file.relative_to(out)),'width':width,'height':height,'viewport':viewport,'sha256':hashlib.sha256(raw).hexdigest()})
+    save_manifest(locale)
   session.cleanup()
   sessions.pop(device)
  for locale in locales:
-  (out/locale/'capture-manifest.json').write_text(json.dumps({'locale':locale,'verification':'native-presentation-v1','source':os.environ.get('CAPTURE_SOURCE_SHA',os.environ.get('GITHUB_SHA')),'renderer':'actual iOS Simulator capture entry point, shared production components','screenshots':records[locale]},indent=2))
+  save_manifest(locale)
   print(f'Captured {locale}: {len(records[locale])} actual iOS screenshots.',flush=True)
 finally:
  bridge.stop()

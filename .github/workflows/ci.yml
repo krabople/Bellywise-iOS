@@ -47,7 +47,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: bellywise-checks-${{ github.ref }}-${{ inputs.capture_batches && 'batches' || 'build' }}
+  group: bellywise-checks-${{ github.ref }}-${{ inputs.capture_batches && 'batches' || inputs.capture_locales || 'build' }}
   cancel-in-progress: true
 
 jobs:

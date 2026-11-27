@@ -12,4 +12,7 @@ class CapturePolicyTests(unittest.TestCase):
   self.assertTrue(visible_capture({'lines':['9:41','Journal','Food','Symptoms','Patterns'],'languageSupported':True,'contentInkFraction':.04}))
  def test_open_dialog_is_never_accepted(self):
   self.assertFalse(visible_capture({'lines':['Open in Bellywise?'],'languageSupported':False,'contentInkFraction':.04}))
+ def test_native_acknowledged_visual_capture_still_needs_visible_content(self):
+  self.assertTrue(visible_capture({'lines':[],'ocrSkipped':True,'contentInkFraction':.04}))
+  self.assertFalse(visible_capture({'lines':[],'ocrSkipped':True,'contentInkFraction':.00009}))
 if __name__=='__main__':unittest.main()

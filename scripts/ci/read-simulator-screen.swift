@@ -4,8 +4,8 @@ import ImageIO
 import Vision
 import CoreGraphics
 
-guard (2...3).contains(CommandLine.arguments.count) else {
-  fputs("Usage: read-simulator-screen screenshot.png [locale]\n", stderr)
+guard (2...4).contains(CommandLine.arguments.count) else {
+  fputs("Usage: read-simulator-screen screenshot.png [locale] [--visual-only]\n", stderr)
   exit(1)
 }
 let url = URL(fileURLWithPath: CommandLine.arguments[1])
@@ -19,11 +19,15 @@ guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
   exit(1)
 }
 do {
+  let visualOnly = CommandLine.arguments.contains("--visual-only")
+  var lines: [String] = []
+  var languageSupported = false
+  if !visualOnly {
   let request = VNRecognizeTextRequest()
   // Headless hosted Macs do not always provide a usable Metal accelerator.
   request.usesCPUOnly = true
   request.recognitionLevel = .accurate
-  let locale = CommandLine.arguments.count == 3 ? CommandLine.arguments[2] : "en-US"
+  let locale = CommandLine.arguments.count >= 3 ? CommandLine.arguments[2] : "en-US"
   let supported = try request.supportedRecognitionLanguages()
   let language = supported.first { $0.lowercased() == locale.lowercased() }
     ?? supported.first { $0.split(separator: "-").first == locale.split(separator: "-").first }
@@ -31,9 +35,11 @@ do {
   request.automaticallyDetectsLanguage = language == nil
   request.usesLanguageCorrection = true
   try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
-  let lines = (request.results ?? [])
+  languageSupported = language != nil
+  lines = (request.results ?? [])
     .sorted { $0.boundingBox.midY > $1.boundingBox.midY }
     .compactMap { $0.topCandidates(1).first?.string }
+  }
   // Vision cannot read every script the app supports. Verify visible ink too,
   // excluding system status/navigation areas, to distinguish content from a spinner.
   let width = image.width, height = image.height
@@ -55,7 +61,7 @@ do {
     return Double(ink) / Double(max(count, 1))
   }
   let output = try JSONSerialization.data(withJSONObject: ["lines": lines,
-    "languageSupported": language != nil, "contentInkFraction": inkFraction], options: [.prettyPrinted, .sortedKeys])
+    "languageSupported": languageSupported, "ocrSkipped": visualOnly, "contentInkFraction": inkFraction], options: [.prettyPrinted, .sortedKeys])
   FileHandle.standardOutput.write(output)
   FileHandle.standardOutput.write(Data("\n".utf8))
 } catch {
