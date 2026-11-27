@@ -9,7 +9,8 @@
   },
   "bn": {
     "Patterns": "সম্পর্ক",
-    "My patterns": "সম্ভাব্য সম্পর্ক"
+    "My patterns": "সম্ভাব্য সম্পর্ক",
+    "PRIVACY & SHARING": "গোপনীয়তা ও শেয়ারিং"
   },
   "ca": {
     "Patterns": "Relacions",
@@ -125,11 +126,13 @@
   },
   "de": {
     "Patterns": "Zusammenhänge",
-    "My patterns": "Mögliche Zusammenhänge"
+    "My patterns": "Mögliche Zusammenhänge",
+    "BARCODE": "STRICHCODE"
   },
   "el": {
     "Patterns": "Συσχετίσεις",
-    "My patterns": "Πιθανές συσχετίσεις"
+    "My patterns": "Πιθανές συσχετίσεις",
+    "BARCODE": "ΓΡΑΜΜΩΤΟΣ ΚΩΔΙΚΑΣ"
   },
   "gu": {
     "Patterns": "સંબંધો",
@@ -149,7 +152,8 @@
   },
   "id": {
     "Patterns": "Keterkaitan",
-    "My patterns": "Kemungkinan keterkaitan"
+    "My patterns": "Kemungkinan keterkaitan",
+    "BARCODE": "KODE BATANG"
   },
   "it": {
     "Patterns": "Collegamenti",
@@ -169,7 +173,8 @@
   },
   "ms": {
     "Patterns": "Perkaitan",
-    "My patterns": "Kemungkinan perkaitan"
+    "My patterns": "Kemungkinan perkaitan",
+    "BARCODE": "KOD BAR"
   },
   "ml": {
     "Patterns": "ബന്ധങ്ങൾ",
@@ -181,7 +186,8 @@
   },
   "nb": {
     "Patterns": "Sammenhenger",
-    "My patterns": "Mulige sammenhenger"
+    "My patterns": "Mulige sammenhenger",
+    "FIND THE MEALS": "FINN MÅLTIDENE"
   },
   "or": {
     "Patterns": "ସମ୍ପର୍କ",

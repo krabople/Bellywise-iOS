@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
+import { createHash } from 'node:crypto';
 const root=path.resolve('..');
 const output=path.join(root,'artifacts/international-listing');
 const catalogs=JSON.parse(await fs.readFile('src/i18n/messages.json','utf8'));
@@ -79,6 +80,23 @@ async function screenshot(locale,device,item,translate){
 }
 const manifest=[];
 for(const locale of locales){
+ let captureSource;
+ if(!locale.startsWith('en')){
+  const captureRoot=path.join(root,'artifacts/localized-captures');
+  const capture=JSON.parse(await fs.readFile(path.join(captureRoot,locale,'capture-manifest.json'),'utf8'));
+  if(capture.locale!==locale||!/^[a-f0-9]{40}$/.test(capture.source)||capture.screenshots.length!==20)throw Error('Incomplete native capture manifest: '+locale);
+  for(const device of ['iphone','ipad']){
+   const records=capture.screenshots.filter(record=>record.device===device);
+   if(records.length!==10||new Set(records.map(record=>record.order)).size!==10)throw Error('Incomplete device captures: '+locale+'/'+device);
+   for(const record of records){
+    const expectedPrefix=locale+'/'+device+'/';
+    if(!record.file.startsWith(expectedPrefix)||record.file.includes('..'))throw Error('Invalid capture path');
+    const pixels=await fs.readFile(path.join(captureRoot,record.file));
+    if(createHash('sha256').update(pixels).digest('hex')!==record.sha256)throw Error('Native capture hash differs: '+record.file);
+   }
+  }
+  captureSource=capture.source;
+ }
  const dictionary=catalogs[locale]??{};
  const translate=text=>dictionary[text]??text;
  let localizedDescription=translate(description);
@@ -109,7 +127,7 @@ for(const locale of locales){
  const files={iphone:[],ipad:[]};
  for(const [device,items]of Object.entries(source))for(const item of items)files[device].push(await screenshot(locale,device,item,translate));
  await fs.writeFile(path.join(output,locale,'metadata.json'),JSON.stringify(metadata,null,2)+'\n');
- manifest.push({locale,preview:metadata.previewPolicy,screenshots:files,issues:metadata.issues});
+ manifest.push({locale,preview:metadata.previewPolicy,captureSource,screenshots:files,issues:metadata.issues});
  console.log(`Prepared ${locale}: 20 screenshots; description ${metadata.description.length} characters.`);
 }
 let previous=[];try{previous=JSON.parse(await fs.readFile(path.join(output,'manifest.json'),'utf8'));}catch{}
