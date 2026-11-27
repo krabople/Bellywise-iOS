@@ -3,6 +3,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { ArrowLeft, Check, ChevronRight, Copy, Pencil, Search } from 'lucide-react-native';
 import { copyMealItems, previousMeals } from '../domain/mealReuse';
+import { ingredientDisplayName } from '../domain/ingredients';
 import type { CustomIngredientDefinition, Meal } from '../domain/types';
 import { DateField } from './DateField';
 import { defaultEntryDate, MealForm, uid } from './EntryForms';
@@ -76,7 +77,7 @@ export function RepeatMealForm({ meals, initialIds, selectedDay, customIngredien
         {checked && <><T muted style={{ fontSize: 12 }}>{item.ingredients.map(ingredient => ingredient.name).join(' · ') || 'No ingredients recorded'}</T>{item.notes && <T muted numberOfLines={2} style={{ fontSize: 11 }}>{t("Notes: {0}", [item.notes])}</T>}<Button label={t("Edit {0}", [item.name])} icon={Pencil} variant="secondary" disabled={busy} onPress={() => setEditingId(item.id)} /></>}
       </Card>; })}
       {!!error && <Notice warm>{error}</Notice>}
-      <Button label={tx(group === 'Ungrouped' ? 'Add again to my journal' : t("Add again to {0}", [group.toLowerCase()]))} icon={Copy} busy={busy} disabled={selected.length === 0} onPress={() => void save()} />
+      <Button label={group === 'Ungrouped' ? t('Add again to my journal') : t("Add again to {0}", [t(group).toLocaleLowerCase(getLocale())])} icon={Copy} busy={busy} disabled={selected.length === 0} onPress={() => void save()} />
       <T muted style={{ fontSize: 11 }}>{t("This creates new entries at the time above. Your original meal stays in your journal.")}</T>
     </>}
   </Sheet>;
