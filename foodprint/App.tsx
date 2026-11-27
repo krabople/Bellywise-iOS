@@ -57,10 +57,15 @@ const patternNotificationKey = (pattern: PatternResult) => `${pattern.ingredient
 /** Supplied only by the separate marketing entry point; never reads a personal diary. */
 export interface CaptureState { diary: SavedDiary; tab: Tab; modal: ModalState; date: string; }
 export default function App() { return <CaptureApp />; }
-export function CaptureApp({ capture }: { capture?: CaptureState } = {}) {
+export function CaptureApp({ capture, captureKey, onCaptureReady }: { capture?: CaptureState; captureKey?: string; onCaptureReady?: () => void } = {}) {
   const [loaded, error] = useFonts({ DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold, Lora_400Regular, Lora_500Medium });
+  useEffect(() => {
+    if (!capture || !loaded || !onCaptureReady) return;
+    const timer = setTimeout(onCaptureReady, 700);
+    return () => clearTimeout(timer);
+  }, [loaded, captureKey, onCaptureReady, Boolean(capture)]);
   if (!loaded && !error) return <View style={{ flex: 1, backgroundColor: C.bg, justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator color={C.green} /></View>;
-  return <SafeAreaProvider><Bellywise capture={capture} /></SafeAreaProvider>;
+  return <SafeAreaProvider><Bellywise key={captureKey} capture={capture} /></SafeAreaProvider>;
 }
 
 function Bellywise({ capture }: { capture?: CaptureState }) {

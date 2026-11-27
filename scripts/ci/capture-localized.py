@@ -61,6 +61,13 @@ try:
     time.sleep(1.2)
     file=dest/f'{order:02d}-{scene}.png'
     subprocess.run(['xcrun','simctl','io',session.state['device'],'screenshot','--type=png',str(file)],check=True,timeout=30,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    # Never accept a loading spinner or a system sheet as an app screenshot.
+    evidence=json.loads(subprocess.check_output([str(root/'artifacts/read-simulator-screen'),str(file)],timeout=30))
+    (dest/f'{order:02d}-{scene}-ocr.json').write_text(json.dumps(evidence,ensure_ascii=False))
+    lines=evidence.get('lines',[])
+    text=' '.join(lines).lower()
+    if len(lines)<5 or 'open in bellywise' in text:
+     raise RuntimeError(f'Visible app content was not verified for {locale}/{device}/{scene}; screenshot rejected.')
     raw=file.read_bytes();width,height=struct.unpack('>II',raw[16:24]);assert width>1000 and height>2000
     records.append({'device':device,'order':order,'scene':scene,'file':str(file.relative_to(out)),'width':width,'height':height,'sha256':hashlib.sha256(raw).hexdigest()})
   (out/locale/'capture-manifest.json').write_text(json.dumps({'locale':locale,'source':os.environ.get('CAPTURE_SOURCE_SHA',os.environ.get('GITHUB_SHA')),'renderer':'actual iOS Simulator capture entry point, shared production components','screenshots':records},indent=2))

@@ -44,10 +44,10 @@ function CaptureRoot(){
   const poll=async()=>{if(busy)return;busy=true;try{const response=await fetch('http://localhost:8769/fixture?device='+device,{cache:'no-store'});const fixture=await response.json();if(live&&fixture)apply(fixture.locale,fixture.scene,fixture.sequence);}catch{}finally{busy=false;}};
   void poll();const timer=setInterval(()=>void poll(),350);return()=>{live=false;clearInterval(timer);};
  },[]);
- useEffect(()=>{if(!selection||Platform.OS==='web')return;const timer=setTimeout(()=>{void fetch('http://localhost:8769/ready?device='+device+'&sequence='+selection.sequence+'&locale='+encodeURIComponent(getLocale())+'&scene='+selection.scene).catch(()=>{});},350);return()=>clearTimeout(timer);},[selection]);
+ const acknowledge=()=>{if(!selection||Platform.OS==='web')return;void fetch('http://localhost:8769/ready?device='+device+'&sequence='+selection.sequence+'&locale='+encodeURIComponent(getLocale())+'&scene='+selection.scene).catch(()=>{});};
  const photo=Platform.OS==='web'?require('./marketing/assets/recorded-label.png'):Image.resolveAssetSource(require('./marketing/assets/recorded-label.png'));
  const photoUri=typeof photo==='string'?photo:photo.uri;
- return <SafeAreaProvider><App key={selection?selection.locale+':'+selection.scene+':'+selection.sequence:'welcome'} capture={selection?.state}/>{selection?.scene==='photo'&&<PhotoRegion uri={photoUri} width={700} height={1304} onCancel={()=>{}} onConfirm={()=>{}}/>}{selection?.scene==='ingredient'&&<IngredientDetails id="milk" onClose={()=>{}}/>}</SafeAreaProvider>;
+ return <SafeAreaProvider><App captureKey={selection?selection.locale+':'+selection.scene+':'+selection.sequence:'welcome'} capture={selection?.state} onCaptureReady={acknowledge}/>{selection?.scene==='photo'&&<PhotoRegion uri={photoUri} width={700} height={1304} onCancel={()=>{}} onConfirm={()=>{}}/>}{selection?.scene==='ingredient'&&<IngredientDetails id="milk" onClose={()=>{}}/>}</SafeAreaProvider>;
 }
 
 registerRootComponent(CaptureRoot);
