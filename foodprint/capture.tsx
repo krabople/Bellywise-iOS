@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { Image, Linking, Platform } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Dimensions, Image, Platform } from 'react-native';
 import { registerRootComponent } from 'expo';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { CaptureApp as App, type CaptureState } from './App';
-import { configureLocale, t, type AppLocale } from './src/i18n';
+import { configureLocale, getLocale, t, type AppLocale } from './src/i18n';
 import { isAppLocale } from './src/i18n/locales';
 import { getDemoData, analyzePatterns, BUILT_IN_SYMPTOMS, ingredientsFromNames } from './src/domain';
 import { ingredientDisplayName } from './src/domain/ingredients';
@@ -34,14 +34,20 @@ function stateFor(locale: AppLocale, scene: Scene): CaptureState {
  return result;
 }
 function CaptureRoot(){
- const [selection,setSelection]=useState<{locale:AppLocale;scene:Scene;state:CaptureState}|null>(null);
+ const [selection,setSelection]=useState<{locale:AppLocale;scene:Scene;state:CaptureState;sequence:number}|null>(null);
+ const seen=useRef(-1);
+ const device=Dimensions.get('window').width>=760?'ipad':'iphone';
  useEffect(()=>{
-  const open=(url:string)=>{const query=new URL(url).searchParams;const locale=query.get('locale'),scene=query.get('scene');if(!isAppLocale(locale)||!scenes.includes(scene as Scene))return;configureLocale({language:locale,region:'FR'});setSelection({locale,scene:scene as Scene,state:stateFor(locale,scene as Scene)});};
-  if(Platform.OS==='web')open(window.location.href);else void Linking.getInitialURL().then(url=>{if(url)open(url);});
-  const listener=Linking.addEventListener('url',event=>open(event.url));return()=>listener.remove();
+  let live=true,busy=false;
+  const apply=(locale:unknown,scene:unknown,sequence:number)=>{if(!isAppLocale(locale)||!scenes.includes(scene as Scene)||seen.current===sequence)return;seen.current=sequence;configureLocale({language:locale,region:'FR'});setSelection({locale,scene:scene as Scene,state:stateFor(locale,scene as Scene),sequence});};
+  if(Platform.OS==='web'){const query=new URL(window.location.href).searchParams;apply(query.get('locale'),query.get('scene'),0);return;}
+  const poll=async()=>{if(busy)return;busy=true;try{const response=await fetch('http://localhost:8769/fixture?device='+device,{cache:'no-store'});const fixture=await response.json();if(live&&fixture)apply(fixture.locale,fixture.scene,fixture.sequence);}catch{}finally{busy=false;}};
+  void poll();const timer=setInterval(()=>void poll(),350);return()=>{live=false;clearInterval(timer);};
  },[]);
+ useEffect(()=>{if(!selection||Platform.OS==='web')return;const timer=setTimeout(()=>{void fetch('http://localhost:8769/ready?device='+device+'&sequence='+selection.sequence+'&locale='+encodeURIComponent(getLocale())+'&scene='+selection.scene).catch(()=>{});},350);return()=>clearTimeout(timer);},[selection]);
  const photo=Platform.OS==='web'?require('./marketing/assets/recorded-label.png'):Image.resolveAssetSource(require('./marketing/assets/recorded-label.png'));
  const photoUri=typeof photo==='string'?photo:photo.uri;
- return <SafeAreaProvider><App key={selection?`${selection.locale}:${selection.scene}`:'welcome'} capture={selection?.state}/>{selection?.scene==='photo'&&<PhotoRegion uri={photoUri} width={700} height={1304} onCancel={()=>{}} onConfirm={()=>{}}/>}{selection?.scene==='ingredient'&&<IngredientDetails id="milk" onClose={()=>{}}/>}</SafeAreaProvider>;
+ return <SafeAreaProvider><App key={selection?selection.locale+':'+selection.scene+':'+selection.sequence:'welcome'} capture={selection?.state}/>{selection?.scene==='photo'&&<PhotoRegion uri={photoUri} width={700} height={1304} onCancel={()=>{}} onConfirm={()=>{}}/>}{selection?.scene==='ingredient'&&<IngredientDetails id="milk" onClose={()=>{}}/>}</SafeAreaProvider>;
 }
+
 registerRootComponent(CaptureRoot);

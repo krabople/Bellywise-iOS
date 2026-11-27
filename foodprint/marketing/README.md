@@ -4,7 +4,7 @@
 
 The native capture run is an explicit manual dispatch of the existing checks workflow on `codex/localised-screen-captures`. CI temporarily selects the capture entry point in its disposable checkout, compiles and verifies the native app, captures French first, then the remaining languages. It never signs a distribution build or uploads to TestFlight/App Store Connect.
 
-Native capture scenes are selected by `bellywise://capture?locale=fr&scene=journal`. This route exists only in the separate capture entry point. The normal app does not handle it. Each scene mounts fresh memory-only example state, preserves real component behaviour and uses the current bundled translations. Example meal names are translated explicitly; user-entered diary wording is not rewritten.
+Native capture scenes use an isolated loopback fixture bridge bound to127.0.0.1. It supplies only fictional scene selections, and the app must acknowledge the requested locale, scene and committed render before an image can be saved. This avoids system URL-confirmation dialogs. The bridge and its local HTTP exception exist only in the CI capture entry/build; the normal app neither imports the entry nor contacts this endpoint.
 
 The label photograph is cropped from the user's original recording and preserves the printed packaging wording. Product fixture ingredients are from the published French Open Food Facts record for barcode3017620422003, accessed27November2026. Its mismatched bracket in the soy-lecithin entry was manually checked against the published text for the reviewed fixture. No typical recipe is used to invent product ingredients. Data attribution: Open Food Facts contributors, ODbL1.0.
 

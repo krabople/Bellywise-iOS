@@ -1,6 +1,7 @@
 """Capture actual localised iOS UI from the separate capture entry point."""
 from pathlib import Path
 import argparse,hashlib,importlib.util,json,os,re,struct,subprocess,time
+from capture_fixture_bridge import FixtureBridge
 root=Path(__file__).resolve().parents[2]
 parser=argparse.ArgumentParser();parser.add_argument('--locales');parser.add_argument('--exclude');parser.add_argument('--keep-devices',action='store_true');args=parser.parse_args()
 if os.environ.get('GITHUB_ACTIONS')!='true':raise SystemExit('Native capture is restricted to disposable GitHub CI simulators.')
@@ -21,6 +22,7 @@ if args.locales:locales=[l for l in locales if l in args.locales.split(',')]
 if args.exclude:locales=[l for l in locales if l not in args.exclude.split(',')]
 out=root/'artifacts/localized-captures';out.mkdir(parents=True,exist_ok=True)
 sessions={}
+bridge=FixtureBridge();bridge.start()
 try:
  for device,family in [('iphone','iPhone'),('ipad','iPad')]:
   directory=root/'artifacts'/('capture-session-'+device);directory.mkdir(exist_ok=True)
@@ -48,9 +50,15 @@ try:
    scenes=['journal','ingredients','patterns','symptom','photo' if device=='iphone' else 'checkin','ingredient','repeat','checkin' if device=='iphone' else 'discover','notifications','privacy']
    for order,scene in enumerate(scenes,1):
     dest=out/locale/device;dest.mkdir(parents=True,exist_ok=True)
-    url=f'bellywise://capture?locale={locale}&scene={scene}'
-    subprocess.run(['xcrun','simctl','openurl',session.state['device'],url],check=True,timeout=30)
-    time.sleep(4)
+    fixture=bridge.select(device,locale,scene)
+    deadline=time.time()+40
+    while time.time()<deadline:
+     confirmed=bridge.confirmed(device,fixture)
+     if confirmed:break
+     time.sleep(.2)
+    else:raise RuntimeError(f'The actual app did not confirm {locale}/{device}/{scene}; no screenshot accepted.')
+    # The app acknowledges a committed render; allow modal animation/image decode.
+    time.sleep(1.2)
     file=dest/f'{order:02d}-{scene}.png'
     subprocess.run(['xcrun','simctl','io',session.state['device'],'screenshot','--type=png',str(file)],check=True,timeout=30,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     raw=file.read_bytes();width,height=struct.unpack('>II',raw[16:24]);assert width>1000 and height>2000
@@ -58,5 +66,6 @@ try:
   (out/locale/'capture-manifest.json').write_text(json.dumps({'locale':locale,'source':os.environ.get('CAPTURE_SOURCE_SHA',os.environ.get('GITHUB_SHA')),'renderer':'actual iOS Simulator capture entry point, shared production components','screenshots':records},indent=2))
   print(f'Captured {locale}: {len(records)} actual iOS screenshots.',flush=True)
 finally:
+ bridge.stop()
  if not args.keep_devices:
   for session in sessions.values():session.cleanup()

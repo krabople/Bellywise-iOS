@@ -50,6 +50,8 @@ jobs:
         run: npm run check:localization
       - name: Domain and parser tests
         run: npx tsx --test tests/*.test.ts
+      - name: Capture bridge refuses stale or wrong-language renders
+        run: python3 tests/test_capture_bridge.py
       - name: Web bundle
         run: npx expo export --platform web
 
@@ -73,7 +75,14 @@ jobs:
       - name: Select isolated screenshot entry point
         if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures'
         working-directory: foodprint
-        run: node -e "const fs=require('fs');const p=require('./package.json');p.main='capture.tsx';fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const p=require('./package.json');p.main='capture.tsx';fs.writeFileSync('package.json',JSON.stringify(p,null,2));
+          const a=require('./app.json');const info=a.expo.ios.infoPlist;
+          info.NSAppTransportSecurity={...(info.NSAppTransportSecurity??{}),NSAllowsLocalNetworking:true,NSExceptionDomains:{localhost:{NSExceptionAllowsInsecureHTTPLoads:true,NSIncludesSubdomains:false}}};
+          fs.writeFileSync('app.json',JSON.stringify(a,null,2));
+          NODE
       - name: Compile and launch iOS Simulator app
         run: bash scripts/ci/build-ios.sh
       - name: Capture French iPhone and iPad screens first
