@@ -86,7 +86,10 @@
     "What you eat and drink. How you feel. A little more understanding.": "Ce que vous mangez et buvez. Ce que vous ressentez. Pour mieux comprendre.",
     "Had again at": "Date et heure de ce repas",
     "What did you have again?": "Qu’avez-vous mangé à nouveau ?",
-    "Heartburn / reflux": "Brûlures d’estomac / reflux"
+    "Heartburn / reflux": "Brûlures d’estomac / reflux",
+    "Low energy": "Fatigue / manque d’énergie",
+    "Bloating, wind or abdominal pain": "Ballonnements, gaz ou douleurs abdominales",
+    "Milk contains lactose sugar and milk proteins. These can be involved in different kinds of reaction.": "Le lait contient du lactose (un sucre) et des protéines de lait. Ces composants peuvent être impliqués dans différents types de réactions."
   },
   "fr-CA": {
     "Patterns": "Liens",
@@ -123,7 +126,10 @@
     "confirmed": "confirmé",
     "estimated": "estimé",
     "{0} was logged on {1} of days with {2} and {3} of days without it{4}.": "Jours avec {0} : {1} quand {2} est présent, contre {3} sans{4}.",
-    "{0} rated {1} day{2}": "{0} jour{2} avec une intensité notée ({1})"
+    "{0} rated {1} day{2}": "{0} jour{2} avec une intensité notée ({1})",
+    "Low energy": "Fatigue / manque d’énergie",
+    "Bloating, wind or abdominal pain": "Ballonnements, gaz ou douleurs abdominales",
+    "Milk contains lactose sugar and milk proteins. These can be involved in different kinds of reaction.": "Le lait contient du lactose (un sucre) et des protéines de lait. Ces composants peuvent être impliqués dans différents types de réactions."
   },
   "de": {
     "Patterns": "Zusammenhänge",

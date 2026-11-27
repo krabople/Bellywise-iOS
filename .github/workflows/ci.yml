@@ -31,6 +31,17 @@ on:
         type: boolean
         default: false
 
+      capture_locales:
+        description: 'Optional comma-separated locales for a small capture retake'
+        required: false
+        type: string
+        default: ''
+      capture_scenes:
+        description: 'Optional comma-separated scene names for a capture retake'
+        required: false
+        type: string
+        default: ''
+
 permissions:
   contents: read
   actions: read
@@ -145,7 +156,7 @@ jobs:
           retention-days: 7
 
   capture-reuse:
-    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures' && inputs.capture_reuse_run != '' && !inputs.capture_batches
+    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures' && inputs.capture_reuse_run != '' && !inputs.capture_batches && inputs.capture_locales == ''
     needs: app-checks
     runs-on: macos-26
     timeout-minutes: 120
@@ -197,7 +208,7 @@ jobs:
           retention-days: 7
 
   capture-batches:
-    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures' && inputs.capture_batches && inputs.capture_reuse_run != ''
+    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures' && inputs.capture_batches && inputs.capture_reuse_run != '' && inputs.capture_locales == ''
     needs: app-checks
     runs-on: macos-26
     timeout-minutes: 120
@@ -253,6 +264,51 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: Bellywise-capture-diagnostics-${{ matrix.batch }}
+          path: artifacts/capture-session-*
+          if-no-files-found: warn
+          retention-days: 7
+
+  capture-selected:
+    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures' && inputs.capture_locales != '' && inputs.capture_reuse_run != ''
+    needs: app-checks
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v8
+        with:
+          name: Bellywise-ios-simulator
+          run-id: ${{ inputs.capture_reuse_run }}
+          github-token: ${{ github.token }}
+          path: artifacts/reused-source
+      - name: Verify immutable capture app and select Xcode
+        env:
+          CAPTURE_REUSE_RUN: ${{ inputs.capture_reuse_run }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/prepare-capture-reuse.py
+      - name: Capture selected translated screens
+        env:
+          CAPTURE_LOCALES: ${{ inputs.capture_locales }}
+          CAPTURE_SCENES: ${{ inputs.capture_scenes }}
+        run: python3 scripts/ci/capture-localized.py --locales "$CAPTURE_LOCALES" --scenes "$CAPTURE_SCENES"
+      - name: Keep selected translated captures
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bellywise-selected-native-captures
+          path: artifacts/localized-captures
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Keep capture diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bellywise-selected-capture-diagnostics
           path: artifacts/capture-session-*
           if-no-files-found: warn
           retention-days: 7

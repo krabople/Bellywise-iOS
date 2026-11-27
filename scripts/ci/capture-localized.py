@@ -4,7 +4,8 @@ import argparse,hashlib,importlib.util,json,os,re,struct,subprocess,time
 from capture_fixture_bridge import FixtureBridge
 from capture_screen_policy import visible_capture
 root=Path(__file__).resolve().parents[2]
-parser=argparse.ArgumentParser();parser.add_argument('--locales');parser.add_argument('--exclude');args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('--locales');parser.add_argument('--exclude');parser.add_argument('--scenes');args=parser.parse_args()
+if args.scenes and not set(args.scenes.split(',')).issubset({'journal','ingredients','patterns','symptom','photo','ingredient','repeat','checkin','notifications','privacy','discover'}):raise SystemExit('Unknown capture scene')
 if os.environ.get('GITHUB_ACTIONS')!='true':raise SystemExit('Native capture is restricted to disposable GitHub CI simulators.')
 spec=importlib.util.spec_from_file_location('simulator_session',Path(__file__).with_name('simulator-session.py'));module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 original_select=module.select_device
@@ -49,6 +50,7 @@ try:
   for locale in locales:
    scenes=['journal','ingredients','patterns','symptom','photo' if device=='iphone' else 'checkin','ingredient','repeat','checkin' if device=='iphone' else 'discover','notifications','privacy']
    for order,scene in enumerate(scenes,1):
+    if args.scenes and scene not in args.scenes.split(','):continue
     dest=out/locale/device;dest.mkdir(parents=True,exist_ok=True)
     for presentation_attempt in (1,2):
      fixture=bridge.select(device,locale,scene)

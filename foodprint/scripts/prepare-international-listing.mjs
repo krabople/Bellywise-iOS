@@ -8,7 +8,9 @@ const verifiedCaptures=new Map();
 const verifiedViewports=new Map();
 const catalogs=JSON.parse(await fs.readFile('src/i18n/messages.json','utf8'));
 const overrides=JSON.parse(await fs.readFile('localization/terminology-overrides.json','utf8'));
+const marketingOverrides=JSON.parse(await fs.readFile('localization/marketing-overrides.json','utf8'));
 for(const [locale,rows]of Object.entries(overrides))Object.assign(catalogs[locale]??={},rows);
+for(const [locale,rows]of Object.entries(marketingOverrides))Object.assign(catalogs[locale]??={},rows);
 const source=JSON.parse(await fs.readFile('localization/marketing-source.json','utf8'));
 const localeSource=await fs.readFile('src/i18n/locales.ts','utf8');
 const allLocales=[...localeSource.split('] as const')[0].matchAll(/\['([^']+)', '/g)].map(m=>m[1]);
@@ -99,7 +101,7 @@ async function screenshot(locale,device,item,translate){
 }
 const manifest=[];
 for(const locale of locales){
- let captureSource;
+ let captureSource,captureAmendments;
  if(!locale.startsWith('en')){
   const captureRoot=path.join(root,'artifacts/localized-captures');
   const capture=JSON.parse(await fs.readFile(path.join(captureRoot,locale,'capture-manifest.json'),'utf8'));
@@ -117,6 +119,7 @@ for(const locale of locales){
    }
   }
   captureSource=capture.source;
+  captureAmendments=capture.amendments;
  }
  const dictionary=catalogs[locale]??{};
  const translate=text=>dictionary[text]??text;
@@ -148,7 +151,7 @@ for(const locale of locales){
  const files={iphone:[],ipad:[]};
  for(const [device,items]of Object.entries(source))for(const item of items)files[device].push(await screenshot(locale,device,item,translate));
  await fs.writeFile(path.join(output,locale,'metadata.json'),JSON.stringify(metadata,null,2)+'\n');
- manifest.push({locale,preview:metadata.previewPolicy,captureSource,screenshots:files,issues:metadata.issues});
+ manifest.push({locale,preview:metadata.previewPolicy,captureSource,captureAmendments,screenshots:files,issues:metadata.issues});
  console.log(`Prepared ${locale}: 20 screenshots; description ${metadata.description.length} characters.`);
 }
 let previous=[];try{previous=JSON.parse(await fs.readFile(path.join(output,'manifest.json'),'utf8'));}catch{}
