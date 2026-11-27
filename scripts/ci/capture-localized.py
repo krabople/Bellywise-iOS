@@ -59,7 +59,16 @@ try:
     # The app acknowledges a committed render; allow modal animation/image decode.
     time.sleep(1.2)
     file=dest/f'{order:02d}-{scene}.png'
-    subprocess.run(['xcrun','simctl','io',session.state['device'],'screenshot','--type=png',str(file)],check=True,timeout=30,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    for screenshot_attempt in (1,2):
+     pending=file.with_name(file.stem+f'-pending-{screenshot_attempt}.png')
+     try:
+      subprocess.run(['xcrun','simctl','io',session.state['device'],'screenshot','--type=png',str(pending)],check=True,timeout=120,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+      pending.replace(file)
+      break
+     except (subprocess.TimeoutExpired,subprocess.CalledProcessError):
+      if screenshot_attempt==2:raise
+      print(f'Retrying simulator screenshot transport: {locale}/{device}/{scene}',flush=True)
+      time.sleep(2)
     # Never accept a loading spinner or a system sheet as an app screenshot.
     evidence=json.loads(subprocess.check_output([str(root/'artifacts/read-simulator-screen'),str(file)],timeout=90))
     (dest/f'{order:02d}-{scene}-ocr.json').write_text(json.dumps(evidence,ensure_ascii=False))
