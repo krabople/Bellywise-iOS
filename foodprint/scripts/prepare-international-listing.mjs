@@ -4,6 +4,7 @@ import sharp from 'sharp';
 import { createHash } from 'node:crypto';
 const root=path.resolve('..');
 const output=path.join(root,'artifacts/international-listing');
+const verifiedCaptures=new Map();
 const catalogs=JSON.parse(await fs.readFile('src/i18n/messages.json','utf8'));
 const overrides=JSON.parse(await fs.readFile('localization/terminology-overrides.json','utf8'));
 for(const [locale,rows]of Object.entries(overrides))Object.assign(catalogs[locale]??={},rows);
@@ -53,11 +54,9 @@ async function screenshot(locale,device,item,translate){
   const folder=ipad?'App Store iPad/screenshots':'App Store screenshots/iPhone-6.9';
   await fs.copyFile(path.join(root,folder,filename),path.join(dest,filename));return filename;
  }
- const folder=path.join(root,'artifacts/localized-captures',locale,device);
- const files=await fs.readdir(folder);
- const file=files.find(name=>name.startsWith(String(item.order).padStart(2,'0')+'-')&&name.endsWith('.png'));
+ const file=verifiedCaptures.get(`${locale}/${device}/${item.order}`);
  if(!file)throw new Error('Missing actual localised iOS capture: '+locale+'/'+device+'/'+item.order);
- const raw=await fs.readFile(path.join(folder,file));
+ const raw=await fs.readFile(file);
  const bg=item.theme==='dark'?'#254838':item.theme==='sage'?'#E9EEDC':item.theme==='sand'?'#F0E9DB':'#F8F6EF';
  const fg=item.theme==='dark'?'#F8F6EF':'#254838',muted=item.theme==='dark'?'#C7D4BA':'#5B7063';
  const margin=ipad?134:110,available=width-margin*2,patches=[];
@@ -93,6 +92,7 @@ for(const locale of locales){
     if(!record.file.startsWith(expectedPrefix)||record.file.includes('..'))throw Error('Invalid capture path');
     const pixels=await fs.readFile(path.join(captureRoot,record.file));
     if(createHash('sha256').update(pixels).digest('hex')!==record.sha256)throw Error('Native capture hash differs: '+record.file);
+    verifiedCaptures.set(`${locale}/${device}/${record.order}`,path.join(captureRoot,record.file));
    }
   }
   captureSource=capture.source;
