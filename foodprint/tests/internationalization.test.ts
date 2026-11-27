@@ -114,3 +114,14 @@ test('language preferences survive backups while older diaries remain compatible
   configureLocale({ language:'en-GB' });
   assert.equal(t('An unknown diary note'), 'An unknown diary note');
 });
+
+test('French decimal percentages preserve whole milk-powder and cocoa ingredient phrases', () => {
+  configureLocale({ language: 'fr', region: 'FR' });
+  const result = parseIngredientLabel('Sucre, cacao maigre 7,4%, LAIT écrémé en poudre 6,6%, LACTOSERUM en poudre.', { source: 'catalog' });
+  const ids = ingredientsFromNames(result.ingredients).map(item => item.id);
+  assert.ok(ids.includes('milk'));
+  assert.ok(ids.includes('cocoa'));
+  assert.ok(ids.includes('whey'));
+  assert.equal(ids.some(id => id.startsWith('custom-')), false);
+  configureLocale({ language: 'en-GB', region: 'GB' });
+});

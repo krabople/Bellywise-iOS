@@ -3,47 +3,47 @@
   "locales": [
     {
       "code": "ar",
-      "messages": 1892,
+      "messages": 1899,
       "rtl": true
     },
     {
       "code": "bn",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "ca",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "zh-Hans",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "zh-Hant",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "hr",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "cs",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "da",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "nl",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
@@ -53,7 +53,7 @@
     },
     {
       "code": "en-CA",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
@@ -63,192 +63,192 @@
     },
     {
       "code": "en-US",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "fi",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "fr",
-      "messages": 1892,
+      "messages": 1899,
       "rtl": false
     },
     {
       "code": "fr-CA",
-      "messages": 1892,
+      "messages": 1899,
       "rtl": false
     },
     {
       "code": "de",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "el",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "gu",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "he",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": true
     },
     {
       "code": "hi",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "hu",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "id",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "it",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "ja",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "kn",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "ko",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "ms",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "ml",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "mr",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "nb",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "or",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "pl",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "pt-BR",
-      "messages": 1892,
+      "messages": 1899,
       "rtl": false
     },
     {
       "code": "pt-PT",
-      "messages": 1892,
+      "messages": 1899,
       "rtl": false
     },
     {
       "code": "pa",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "ro",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "ru",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "sk",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "sl",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "es-MX",
-      "messages": 1892,
+      "messages": 1899,
       "rtl": false
     },
     {
       "code": "es-ES",
-      "messages": 1892,
+      "messages": 1899,
       "rtl": false
     },
     {
       "code": "sv",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "ta",
-      "messages": 1892,
+      "messages": 1899,
       "rtl": false
     },
     {
       "code": "te",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "th",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "tr",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "uk",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     },
     {
       "code": "ur",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": true
     },
     {
       "code": "vi",
-      "messages": 1891,
+      "messages": 1898,
       "rtl": false
     }
   ],

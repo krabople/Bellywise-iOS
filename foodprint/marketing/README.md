@@ -1,0 +1,11 @@
+# Actual translated App Store screen captures
+
+`capture.tsx` is a separate visual-test entry point. The shipping package always uses `index.ts`. The capture build renders the real app, forms, ingredient popup and photo-selection component with fictional diary data, without reading or replacing a personal diary. It does not implement a second drawing of the UI.
+
+The native capture run is an explicit manual dispatch of the existing checks workflow on `codex/localised-screen-captures`. CI temporarily selects the capture entry point in its disposable checkout, compiles and verifies the native app, captures French first, then the remaining languages. It never signs a distribution build or uploads to TestFlight/App Store Connect.
+
+Native capture scenes are selected by `bellywise://capture?locale=fr&scene=journal`. This route exists only in the separate capture entry point. The normal app does not handle it. Each scene mounts fresh memory-only example state, preserves real component behaviour and uses the current bundled translations. Example meal names are translated explicitly; user-entered diary wording is not rewritten.
+
+The label photograph is cropped from the user's original recording and preserves the printed packaging wording. Product fixture ingredients are from the published French Open Food Facts record for barcode3017620422003, accessed27November2026. Its mismatched bracket in the soy-lecithin entry was manually checked against the published text for the reviewed fixture. No typical recipe is used to invent product ingredients. Data attribution: Open Food Facts contributors, ODbL1.0.
+
+The listing renderer now requires actual translated native captures under `artifacts/localized-captures/<locale>/<device>`. It fails if a required capture is absent; it cannot silently substitute an English screenshot. Original approved English listing screenshots remain unchanged. Captures are only cropped/proportionally resized and framed; captions are drawn outside the app pixels.

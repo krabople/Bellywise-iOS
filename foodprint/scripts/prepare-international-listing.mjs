@@ -34,40 +34,35 @@ async function textImage(text,locale,color,width,maxHeight,size){
 }
 async function screenshot(locale,device,item,translate){
  const ipad=device==='ipad',width=ipad?2048:1320,height=ipad?2732:2868;
- const folder=ipad?'App Store iPad/screenshots':'App Store screenshots/iPhone-6.9';
- const filename=`${String(item.order).padStart(2,'0')}-${item.slug}.png`;
- const original=await fs.readFile(path.join(root,folder,filename));
- if(locale.startsWith('en')) {
-  const dest=path.join(output,locale,device);await fs.mkdir(dest,{recursive:true});
-  await fs.writeFile(path.join(dest,filename),original);return filename;
- }
- const bg=item.theme==='dark'?'#254838':item.theme==='sage'?'#E9EEDC':item.theme==='sand'?'#F0E9DB':'#F8F6EF';
- const fg=item.theme==='dark'?'#F8F6EF':'#254838';const muted=item.theme==='dark'?'#C7D4BA':'#5B7063';
- const margin=ipad?134:110,available=width-margin*2;
- const patches=[{input:await sharp({create:{width,height:540,channels:3,background:bg}}).png().toBuffer(),left:0,top:200}];
- const place=async(text,top,size,maxHeight,color,left=margin,w=available)=>{
-  const image=await textImage(translate(text),locale,color,w,maxHeight,size);
-  patches.push({input:image.input,left:/^(ar|he|ur)$/.test(locale)?left+w-image.width:left,top});
- };
- await place(item.eyebrow,ipad?226:213,ipad?33:27,50,muted);
- await place(item.title,ipad?294:281,ipad?134:108,250,fg);
- await place(item.subtitle,ipad?606:565,ipad?46:41,130,muted);
- for(const label of item.labels){
-  const [x,y]=label.xy;const h=ipad?58:48,w=width-x-margin;
-  patches.push({input:await sharp({create:{width:w,height:h,channels:3,background:bg}}).png().toBuffer(),left:x,top:y});
-  await place(label.text,y,label.size,h,muted,x,w);
- }
- for(const footer of item.footers){
-  const top=footer.y-3,h=Math.min(height-top,ipad?90:72);
-  patches.push({input:await sharp({create:{width,height:h,channels:3,background:bg}}).png().toBuffer(),left:0,top});
-  await place(footer.text,footer.y,ipad?34:29,h-4,muted);
- }
- if(!locale.startsWith('en')) await place('App shown in English.',105,ipad?25:19,50,muted,Math.round(width*.55),Math.round(width*.36));
+ const filename=String(item.order).padStart(2,'0')+'-'+item.slug+'.png';
  const dest=path.join(output,locale,device);await fs.mkdir(dest,{recursive:true});
- const result=await sharp(original).composite(patches).flatten({background:bg}).removeAlpha().png({compressionLevel:7}).toBuffer();
- const meta=await sharp(result).metadata();if(meta.width!==width||meta.height!==height||meta.hasAlpha)throw new Error('Invalid screenshot export');
- await fs.writeFile(path.join(dest,filename),result);
- return filename;
+ if(locale.startsWith('en')){
+  const folder=ipad?'App Store iPad/screenshots':'App Store screenshots/iPhone-6.9';
+  await fs.copyFile(path.join(root,folder,filename),path.join(dest,filename));return filename;
+ }
+ const folder=path.join(root,'artifacts/localized-captures',locale,device);
+ const files=await fs.readdir(folder);
+ const file=files.find(name=>name.startsWith(String(item.order).padStart(2,'0')+'-')&&name.endsWith('.png'));
+ if(!file)throw new Error('Missing actual localised iOS capture: '+locale+'/'+device+'/'+item.order);
+ const raw=await fs.readFile(path.join(folder,file));
+ const bg=item.theme==='dark'?'#254838':item.theme==='sage'?'#E9EEDC':item.theme==='sand'?'#F0E9DB':'#F8F6EF';
+ const fg=item.theme==='dark'?'#F8F6EF':'#254838',muted=item.theme==='dark'?'#C7D4BA':'#5B7063';
+ const margin=ipad?134:110,available=width-margin*2,patches=[];
+ const brand=Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="'+width+'" height="180"><text x="'+margin+'" y="130" font-family="Georgia" font-size="'+(ipad?76:61)+'" fill="'+fg+'">bellywise</text><path d="M'+margin+' 169 H'+(width-margin)+'" stroke="'+muted+'" opacity=".3"/></svg>');
+ patches.push({input:brand,left:0,top:0});
+ const place=async(text,top,size,maxHeight,color)=>{const image=await textImage(translate(text),locale,color,available,maxHeight,size);patches.push({input:image.input,left:/^(ar|he|ur)$/.test(locale)?width-margin-image.width:margin,top});};
+ await place(item.eyebrow,ipad?218:208,ipad?32:26,55,muted);
+ await place(item.title,ipad?300:280,ipad?114:96,250,fg);
+ await place(item.subtitle,ipad?570:555,ipad?43:38,140,muted);
+ const box={left:ipad?220:180,top:ipad?760:760,width:ipad?1608:960,height:ipad?1840:1980};
+ const content=await sharp(raw).resize(box.width,box.height,{fit:'contain',background:bg}).png().toBuffer();
+ const mask=Buffer.from('<svg width="'+box.width+'" height="'+box.height+'"><rect width="100%" height="100%" rx="'+(ipad?45:50)+'" fill="white"/></svg>');
+ const framed=await sharp(content).ensureAlpha().composite([{input:mask,blend:'dest-in'}]).png().toBuffer();
+ patches.push({input:framed,left:box.left,top:box.top});
+ const footer=item.footers[0]?.text;
+ if(footer)await place(footer,height-70,ipad?28:24,65,muted);
+ const result=await sharp({create:{width,height,channels:3,background:bg}}).composite(patches).flatten({background:bg}).removeAlpha().png({compressionLevel:7}).toBuffer();
+ await fs.writeFile(path.join(dest,filename),result);return filename;
 }
 const manifest=[];
 for(const locale of locales){

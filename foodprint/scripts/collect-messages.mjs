@@ -12,6 +12,7 @@ for(const file of files){
    if(v.length>=2 && /[a-z]/i.test(v) && !/^(?:https?:|\.|#|[A-Z_]+$)/.test(v) && !/[\\/]/.test(v.slice(0,30)) && (v.includes(' ')||/^[A-Z][a-z]+$/.test(v))) messages.add(v);
  }ts.forEachChild(node,visit);};visit(ast);
 }
+for(const value of ['Milk / dairy protein','symptom','feeling','confirmed','estimated']) messages.add(value);
 // Single-word ingredient and curated dish names also need translations.
 const ingredientSource=fs.readFileSync('src/domain/ingredients.ts','utf8');
 const core=ingredientSource.slice(ingredientSource.indexOf('const CORE_ROWS'),ingredientSource.indexOf('const core ='));

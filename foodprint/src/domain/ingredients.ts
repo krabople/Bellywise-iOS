@@ -45,7 +45,7 @@ const CORE_ROWS: [string, string, string[]?][] = [
   ['barley', 'Barley', ['barley malt', 'malt extract']], ['rye', 'Rye'], ['oats', 'Oats', ['oat', 'oat flour']],
   ['rice', 'Rice', ['rice flour', 'brown rice']], ['maize', 'Maize / corn', ['maize', 'corn', 'cornflour', 'corn starch', 'corn flour']],
   ['tapioca', 'Tapioca', ['tapioca starch']], ['potato', 'Potato', ['potatoes', 'potato starch']],
-  ['milk', 'Milk', ['dairy', 'cow milk', "cow's milk", 'cows milk', 'bovine milk', 'whole milk', 'skimmed milk', 'semi skimmed milk', 'semi-skimmed milk', 'skim milk', 'milk powder', 'whole milk powder', 'skimmed milk powder', 'skim milk powder', 'milk solids', 'lactose free milk']],
+  ['milk', 'Milk', ['dairy', 'cow milk', "cow's milk", 'cows milk', 'bovine milk', 'whole milk', 'skimmed milk', 'semi skimmed milk', 'semi-skimmed milk', 'skim milk', 'milk powder', 'whole milk powder', 'skimmed milk powder', 'skim milk powder', 'lait écrémé en poudre', 'lait en poudre écrémé', 'milk solids', 'lactose free milk']],
   ['butter', 'Butter', ['salted butter', 'unsalted butter']], ['ghee', 'Ghee', ['clarified butter']],
   ['cheese', 'Cheese'], ['hard-cheese', 'Hard / aged cheese', ['cheddar', 'parmesan', 'aged cheese', 'hard cheese']],
   ['cream-cheese', 'Cream cheese', ['soft cheese', 'ricotta', 'cottage cheese']], ['mozzarella', 'Mozzarella'],
@@ -74,7 +74,7 @@ const CORE_ROWS: [string, string, string[]?][] = [
   ['shellfish', 'Shellfish', ['prawn', 'prawns', 'shrimp', 'crab', 'lobster', 'mussel', 'mussels']],
   ['olive-oil', 'Olive oil', ['extra virgin olive oil']], ['vegetable-oil', 'Vegetable oil', ['sunflower oil', 'rapeseed oil', 'canola oil']],
   ['sugar', 'Sugar', ['sucrose', 'cane sugar', 'brown sugar', 'glucose', 'glucose syrup']], ['honey', 'Honey'],
-  ['maple', 'Maple syrup'], ['cocoa', 'Cocoa', ['cacao', 'cocoa powder']], ['coffee', 'Coffee', ['ground coffee', 'roast ground coffee', 'roasted ground coffee', 'instant coffee']], ['tea', 'Tea', ['black tea', 'green tea']],
+  ['maple', 'Maple syrup'], ['cocoa', 'Cocoa', ['cacao', 'cacao maigre', 'cocoa powder']], ['coffee', 'Coffee', ['ground coffee', 'roast ground coffee', 'roasted ground coffee', 'instant coffee']], ['tea', 'Tea', ['black tea', 'green tea']],
   ['caffeine', 'Caffeine'], ['carbonation', 'Carbonation', ['carbon dioxide', 'carbonated water']],
   ['peppermint', 'Peppermint'], ['chamomile', 'Chamomile', ['camomile']],
   ['alcohol', 'Alcohol', ['ethanol']], ['sorbitol', 'Sorbitol', ['e420']], ['mannitol', 'Mannitol', ['e421']],
@@ -186,7 +186,7 @@ function canonicalFamily(record: IngredientRecord): IngredientRecord {
 
 const exclusions = /^(?:gluten|dairy|lactose|milk|nut|nuts|sugar|alcohol|caffeine)\s+free$|^(?:free\s+from|without|no|no\s+added|does\s+not\s+contain)\b/;
 const stripQualifiers = (value: string) => normalizeIngredientText(value
-  .replace(/\b\d+(?:\.\d+)?\s*%/g, '')
+  .replace(/\b\d+(?:[.,]\d+)?\s*%/g, '')
   .replace(/\b(?:organic|pasteurised|pasteurized|fortified|enriched|fresh|raw|dried|dry|dehydrated|freeze[ -]dried|frozen|whole|chopped|minced|sliced|crushed|ground|grated|peeled|powdered|roasted|toasted|cooked|red|green|yellow|white|brown|orange|purple|ripe|unripe|unsweetened|sweetened|concentrated)\b/gi, ''));
 
 function inflectionCandidates(value: string): string[] {

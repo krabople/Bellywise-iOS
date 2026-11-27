@@ -1,0 +1,2 @@
+import fs from 'node:fs/promises';import{spawnSync}from'node:child_process';
+const original=await fs.readFile('package.json');try{const pkg=JSON.parse(original);pkg.main='capture.tsx';await fs.writeFile('package.json',JSON.stringify(pkg,null,2));const r=spawnSync(process.execPath,['node_modules/expo/bin/cli','export','--platform','web','--output-dir','dist/capture'],{stdio:'inherit',windowsHide:true,env:{...process.env,CI:'1'}});if(r.status)process.exitCode=r.status;}finally{await fs.writeFile('package.json',original);}

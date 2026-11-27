@@ -41,6 +41,7 @@ print(max(candidates)[1])
 PY
 )"
 export DEVELOPER_DIR
+printf '%s\n' "$DEVELOPER_DIR" > "$ARTIFACT_DIR/xcode-developer-dir.txt"
 cd "$APP_DIR"
 node --version
 xcodebuild -version | tee "$ARTIFACT_DIR/xcode-version.log"

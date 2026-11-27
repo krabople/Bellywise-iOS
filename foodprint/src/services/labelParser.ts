@@ -45,7 +45,8 @@ export function splitIngredientList(text: string): string[] {
   for (let i = 0; i < text.length; i += 1) {
     if ('([{'.includes(text[i])) depth += 1;
     if (')]}'.includes(text[i])) depth = Math.max(0, depth - 1);
-    if (depth === 0 && /[,;•·、，；،]/.test(text[i])) {
+    const decimalPercent = text[i] === ',' && /\d/.test(text[i-1] ?? '') && /^\d+\s*%/.test(text.slice(i+1));
+    if (depth === 0 && !decimalPercent && /[,;•·、，；،]/.test(text[i])) {
       const token = cleanToken(text.slice(start, i));
       if (token) tokens.push(token);
       start = i + 1;
@@ -73,8 +74,8 @@ function matchingBracket(text: string, start: number): number {
 function cleanIngredientName(value: string): string {
   return cleanToken(value)
     .replace(/^_+|_+$/g, '')
-    .replace(/^contains?\s+(?:(?:less\s+than\s+)?\d+(?:\.\d+)?\s*%\s*(?:or\s+less\s+of)?\s*:?)?/i, '')
-    .replace(/\b\d+(?:\.\d+)?\s*%/g, '')
+    .replace(/^contains?\s+(?:(?:less\s+than\s+)?\d+(?:[.,]\d+)?\s*%\s*(?:or\s+less\s+of)?\s*:?)?/i, '')
+    .replace(/\b\d+(?:[.,]\d+)?\s*%/g, '')
     .replace(/\s+/g, ' ')
     .replace(/^[\s:;,]+|[\s:;,]+$/g, '')
     .trim();
@@ -106,7 +107,7 @@ export function expandIngredientNames(ingredients: string[]): string[] {
       cursor = end + 1;
     }
     const name = cleanIngredientName(base || text);
-    if (name && !/^\d+(?:\.\d+)?\s*%?$/.test(name)) expanded.push(name);
+    if (name && !/^\d+(?:[.,]\d+)?\s*%?$/.test(name)) expanded.push(name);
     for (const child of nested) visit(child, depth + 1);
   };
   for (const ingredient of ingredients) visit(ingredient);
@@ -134,7 +135,7 @@ function findSections(text: string): SectionMarker[] {
       if (')]}'.includes(character)) depth = Math.max(0, depth - 1);
     }
     // Keep "whey (contains milk)" inside its ingredient, and "contains 2% or less" in a list.
-    const numericContains = /^contains?\b/i.test(match[0]) && /^\s*(?:less\s+than\s+)?\d+(?:\.\d+)?\s*%/i.test(text.slice(regex.lastIndex));
+    const numericContains = /^contains?\b/i.test(match[0]) && /^\s*(?:less\s+than\s+)?\d+(?:[.,]\d+)?\s*%/i.test(text.slice(regex.lastIndex));
     const isHardHeading = /^(?:nutrition|typical\s+values|storage|best\s+before|use\s+by|directions|cooking|recycling|distributed|manufactured)/i.test(match[0]);
     const startsLine = text.slice(text.lastIndexOf('\n', match.index - 1) + 1, match.index).trim() === '';
     if (numericContains || (depth > 0 && !(isHardHeading && startsLine))) continue;

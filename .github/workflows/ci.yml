@@ -49,7 +49,7 @@ jobs:
   ios-compile:
     needs: app-checks
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v7
         with:
@@ -62,8 +62,34 @@ jobs:
       - name: Install dependencies
         working-directory: foodprint
         run: npm ci
+      - name: Select isolated screenshot entry point
+        if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures'
+        working-directory: foodprint
+        run: node -e "const fs=require('fs');const p=require('./package.json');p.main='capture.tsx';fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
       - name: Compile and launch iOS Simulator app
         run: bash scripts/ci/build-ios.sh
+      - name: Capture French iPhone and iPad screens first
+        if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures'
+        run: DEVELOPER_DIR="$(cat artifacts/xcode-developer-dir.txt)" python3 scripts/ci/capture-localized.py --locales fr --keep-devices
+      - name: Keep French native captures for visual review
+        if: always() && github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures'
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bellywise-French-native-captures
+          path: artifacts/localized-captures/fr
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Capture remaining listing languages
+        if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures'
+        run: DEVELOPER_DIR="$(cat artifacts/xcode-developer-dir.txt)" python3 scripts/ci/capture-localized.py --exclude fr
+      - name: Keep all translated native captures
+        if: always() && github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures'
+        uses: actions/upload-artifact@v7
+        with:
+          name: Bellywise-all-localised-native-captures
+          path: artifacts/localized-captures
+          if-no-files-found: warn
+          retention-days: 7
       - name: Keep native screenshots, logs and simulator artifact
         if: always()
         uses: actions/upload-artifact@v7
