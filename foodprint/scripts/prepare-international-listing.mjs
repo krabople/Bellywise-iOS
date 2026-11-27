@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 const root=path.resolve('..');
 const output=path.join(root,'artifacts/international-listing');
 const verifiedCaptures=new Map();
+const verifiedViewports=new Map();
 const catalogs=JSON.parse(await fs.readFile('src/i18n/messages.json','utf8'));
 const overrides=JSON.parse(await fs.readFile('localization/terminology-overrides.json','utf8'));
 for(const [locale,rows]of Object.entries(overrides))Object.assign(catalogs[locale]??={},rows);
@@ -70,12 +71,27 @@ async function screenshot(locale,device,item,translate){
  await place(item.eyebrow,ipad?218:208,ipad?32:26,55,muted);
  await place(item.title,ipad?300:280,ipad?114:96,250,fg);
  await place(item.subtitle,ipad?570:555,ipad?43:38,140,muted);
- const box={left:ipad?220:180,top:ipad?760:760,width:ipad?1608:960,height:ipad?1840:1980};
- const appPixels=ipad?(![1,8].includes(item.order)?await cropTabletPopup(raw):await cropTabletPage(raw)):raw;
- const content=await sharp(appPixels).resize(box.width,box.height,{fit:'contain',background:bg}).png().toBuffer();
- const mask=Buffer.from('<svg width="'+box.width+'" height="'+box.height+'"><rect width="100%" height="100%" rx="'+(ipad?45:50)+'" fill="white"/></svg>');
- const framed=await sharp(content).ensureAlpha().composite([{input:mask,blend:'dest-in'}]).png().toBuffer();
- patches.push({input:framed,left:box.left,top:box.top});
+ const frame=async(pixels,box)=>{
+  const content=await sharp(pixels).resize(box.width,box.height,{fit:'contain',background:bg}).png().toBuffer();
+  const mask=Buffer.from('<svg width="'+box.width+'" height="'+box.height+'"><rect width="100%" height="100%" rx="'+(ipad?45:38)+'" fill="white"/></svg>');
+  const framed=await sharp(content).ensureAlpha().composite([{input:mask,blend:'dest-in'}]).png().toBuffer();
+  patches.push({input:framed,left:box.left,top:box.top});
+ };
+ if(item.order===2){
+  // Original camera viewport: no English app text, only unchanged printed packaging.
+  await place('BARCODE',ipad?730:745,ipad?32:27,70,muted);
+  const barcode=await fs.readFile('marketing/assets/recorded-barcode-viewport.png');
+  await frame(barcode,{left:margin,top:ipad?805:825,width:available,height:ipad?700:510});
+  await place('INDIVIDUAL INGREDIENTS',ipad?1550:1430,ipad?32:27,70,muted);
+  const viewport=verifiedViewports.get(`${locale}/${device}/${item.order}`);
+  if(!viewport)throw Error('Missing measured native ingredient viewport');
+  const ingredients=await sharp(raw).extract({...viewport,height:Math.min(viewport.height,Math.round(viewport.width*(ipad?0.55:1.0)))}).png().toBuffer();
+  await frame(ingredients,{left:margin,top:ipad?1635:1525,width:available,height:ipad?950:1130});
+ }else{
+  const box={left:ipad?220:180,top:760,width:ipad?1608:960,height:ipad?1840:1980};
+  const appPixels=ipad?(![1,8].includes(item.order)?await cropTabletPopup(raw):await cropTabletPage(raw)):raw;
+  await frame(appPixels,box);
+ }
  const footer=item.footers[0]?.text;
  if(footer)await place(footer,height-70,ipad?28:24,65,muted);
  const result=await sharp({create:{width,height,channels:3,background:bg}}).composite(patches).flatten({background:bg}).removeAlpha().png({compressionLevel:7}).toBuffer();
@@ -97,6 +113,7 @@ for(const locale of locales){
     const pixels=await fs.readFile(path.join(captureRoot,record.file));
     if(createHash('sha256').update(pixels).digest('hex')!==record.sha256)throw Error('Native capture hash differs: '+record.file);
     verifiedCaptures.set(`${locale}/${device}/${record.order}`,path.join(captureRoot,record.file));
+    if(record.viewport)verifiedViewports.set(`${locale}/${device}/${record.order}`,record.viewport);
    }
   }
   captureSource=capture.source;

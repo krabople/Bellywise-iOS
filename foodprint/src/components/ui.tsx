@@ -1,6 +1,6 @@
 import { t, getLocale, isRTL } from '../i18n';
 import React from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, KeyboardAvoidingView, type TextStyle, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, KeyboardAvoidingView, PixelRatio, type TextStyle, type ViewStyle } from 'react-native';
 import { X, ArrowUpRight, type LucideIcon } from 'lucide-react-native';
 import Svg, { Circle, Ellipse, Path, Rect, G, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,7 +8,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export const C = { bg: '#F8F7F3', paper: '#FFFFFF', ink: '#263D33', muted: '#748077', line: '#E5E8E0', green: '#315B43', lime: '#DAE8C7', pale: '#EEF3E8', orange: '#B95F3F', peach: '#F6E5D9', lilac: '#EAE7F1', red: '#AD4739' };
 export const F = { regular: 'DMSans_400Regular', medium: 'DMSans_500Medium', semi: 'DMSans_600SemiBold', bold: 'DMSans_700Bold', serif: 'Lora_400Regular', serifMedium: 'Lora_500Medium' };
 /** Used only by the isolated native screenshot entry point. */
-export const CapturePresentationContext = React.createContext<(() => void) | undefined>(undefined);
+export type CaptureViewport = { left: number; top: number; width: number; height: number };
+export const CapturePresentationContext = React.createContext<{ onShown: (viewport?: CaptureViewport) => void; focusIngredients?: boolean } | undefined>(undefined);
+const CaptureScrollTargetContext = React.createContext<((y: number) => void) | undefined>(undefined);
+export function CaptureIngredientListAnchor(props: React.ComponentProps<typeof View>) {
+ const focus = React.useContext(CaptureScrollTargetContext);
+ return <View {...props} onLayout={focus ? event => focus(event.nativeEvent.layout.y) : props.onLayout} />;
+}
 export function T({ children, style, muted = false, verbatim = false, ...props }: React.ComponentProps<typeof Text> & { muted?: boolean; verbatim?: boolean }) { return <Text {...props} style={[{ color: muted ? C.muted : C.ink, fontFamily: F.regular, fontSize: 14, lineHeight: 21, writingDirection: isRTL(getLocale()) ? 'rtl' : 'ltr' }, style]}>{!verbatim && typeof children === 'string' ? t(children) : children}</Text>; }
 export function Heading({ children, size = 32, style }: { children: React.ReactNode; size?: number; style?: TextStyle }) { return <T style={[{ fontFamily: F.serif, fontSize: size, lineHeight: size * 1.28, letterSpacing: isRTL(getLocale()) ? 0 : -0.8 }, style]}>{children}</T>; }
 export function Row({ children, style }: { children: React.ReactNode; style?: ViewStyle }) { return <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 12 }, style]}>{children}</View>; }
@@ -26,7 +32,22 @@ export function Notice({ children, warm = false }: { children: React.ReactNode; 
 export function Sheet({ title, subtitle, onClose, children, fixedContent }: { title: string; subtitle?: string; onClose: () => void; children: React.ReactNode; fixedContent?: React.ReactNode }) {
   const insets = useSafeAreaInsets();
   const capturePresented = React.useContext(CapturePresentationContext);
-  return <Modal animationType="slide" transparent onRequestClose={onClose} onShow={capturePresented}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, direction: isRTL(getLocale()) ? 'rtl' : 'ltr' }}><View style={{ flex: 1, backgroundColor: '#10281B66', justifyContent: 'center', alignItems: 'center', paddingTop: Math.max(insets.top, 18), paddingBottom: Math.max(insets.bottom, 18), paddingHorizontal: 14 }}><View accessibilityViewIsModal style={{ width: '100%', maxWidth: 610, maxHeight: '100%', backgroundColor: C.paper, borderRadius: 26, overflow: 'hidden' }}><Row style={{ padding: 22, borderBottomWidth: 1, borderBottomColor: C.line, flexShrink: 0 }}><View style={{ flex: 1 }}><Heading size={26}>{t(title)}</Heading>{subtitle && <T muted style={{ fontSize: 12, marginTop: 5 }}>{t(subtitle)}</T>}</View><IconButton icon={X} label="Close" onPress={onClose} /></Row>{fixedContent && <View style={{ paddingHorizontal: 24, paddingTop: 16, flexShrink: 0 }}>{fixedContent}</View>}<ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 24, gap: 20 }} showsVerticalScrollIndicator={false}>{children}</ScrollView></View></View></KeyboardAvoidingView></Modal>;
+  const scroll = React.useRef<ScrollView>(null), target = React.useRef<number | undefined>(undefined);
+  const shown = React.useRef(false), reported = React.useRef(false);
+  const reportPresentation = () => {
+    if (!capturePresented || reported.current || (capturePresented.focusIngredients && target.current === undefined)) return;
+    reported.current = true;
+    if (capturePresented.focusIngredients) scroll.current?.scrollTo({ y: Math.max(0, target.current! - 8), animated: false });
+    setTimeout(() => {
+      if (!capturePresented.focusIngredients) { capturePresented.onShown(); return; }
+      scroll.current?.getNativeScrollRef()?.measureInWindow((x: number, y: number, width: number, height: number) => {
+        const scale = PixelRatio.get();
+        capturePresented.onShown({ left: Math.round((x + 24) * scale), top: Math.round((y + 8) * scale), width: Math.round((width - 48) * scale), height: Math.round((height - 8) * scale) });
+      });
+    }, 450);
+  };
+  const focus = capturePresented?.focusIngredients ? (y: number) => { target.current = y; if (shown.current) reportPresentation(); } : undefined;
+  return <Modal animationType="slide" transparent onRequestClose={onClose} onShow={capturePresented ? () => { shown.current = true; reportPresentation(); } : undefined}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, direction: isRTL(getLocale()) ? 'rtl' : 'ltr' }}><View style={{ flex: 1, backgroundColor: '#10281B66', justifyContent: 'center', alignItems: 'center', paddingTop: Math.max(insets.top, 18), paddingBottom: Math.max(insets.bottom, 18), paddingHorizontal: 14 }}><View accessibilityViewIsModal style={{ width: '100%', maxWidth: 610, maxHeight: '100%', backgroundColor: C.paper, borderRadius: 26, overflow: 'hidden' }}><Row style={{ padding: 22, borderBottomWidth: 1, borderBottomColor: C.line, flexShrink: 0 }}><View style={{ flex: 1 }}><Heading size={26}>{t(title)}</Heading>{subtitle && <T muted style={{ fontSize: 12, marginTop: 5 }}>{t(subtitle)}</T>}</View><IconButton icon={X} label="Close" onPress={onClose} /></Row>{fixedContent && <View style={{ paddingHorizontal: 24, paddingTop: 16, flexShrink: 0 }}>{fixedContent}</View>}<CaptureScrollTargetContext.Provider value={focus}><ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 24, gap: 20 }} showsVerticalScrollIndicator={false}>{children}</ScrollView></CaptureScrollTargetContext.Provider></View></View></KeyboardAvoidingView></Modal>;
 }
 export function SectionTitle({ title, action, onPress }: { title: string; action?: string; onPress?: () => void }) { return <Row style={{ justifyContent: 'space-between', marginBottom: 18 }}><T style={{ fontFamily: F.semi, fontSize: 17 }}>{t(title)}</T>{action && !onPress ? <T muted style={{ fontSize: 12 }}>{t(action)}</T> : action && <Pressable accessibilityRole="button" onPress={onPress} style={{ padding: 8 }}><Row style={{ gap: 4 }}><T style={{ color: C.green, fontSize: 12 }}>{t(action)}</T><ArrowUpRight size={13} color={C.green} /></Row></Pressable>}</Row>; }
 

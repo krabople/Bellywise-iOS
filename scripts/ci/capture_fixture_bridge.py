@@ -1,11 +1,11 @@
 """Loopback-only fictional visual-test scenes, with exact render acknowledgements."""
-import json,threading
+import json,threading,math
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from urllib.parse import urlparse,parse_qs
 
 class FixtureBridge:
  def __init__(self,port=8769):
-  self._fixtures={};self._ready={};self._sequence=0;self._lock=threading.Lock();owner=self
+  self._fixtures={};self._ready={};self._viewports={};self._sequence=0;self._lock=threading.Lock();owner=self
   class Handler(BaseHTTPRequestHandler):
    def log_message(self,*args):pass
    def do_GET(self):
@@ -16,6 +16,13 @@ class FixtureBridge:
      elif request.path=='/ready':
       expected=owner._fixtures.get(device)
       accepted=bool(expected and all(query.get(key,[''])[0]==str(expected[key]) for key in ('sequence','locale','scene','presentation')))
+      viewport=None
+      if accepted and expected['scene']=='ingredients':
+       try:
+        viewport=json.loads(query.get('viewport',['null'])[0])
+        accepted=isinstance(viewport,dict) and set(viewport)=={'left','top','width','height'} and all(type(v) in (int,float) and math.isfinite(v) and v>=0 for v in viewport.values()) and viewport['width']>0 and viewport['height']>0
+       except (ValueError,TypeError):accepted=False
+      if accepted and viewport:owner._viewports[device]={'sequence':expected['sequence'],'rect':viewport}
       if accepted:owner._ready[device]=expected.copy()
       payload={'accepted':accepted}
      else:self.send_error(404);return
@@ -31,3 +38,7 @@ class FixtureBridge:
    return value.copy()
  def confirmed(self,device,fixture):
   with self._lock:return self._ready.get(device)==fixture
+ def viewport(self,device,fixture):
+  with self._lock:
+   value=self._viewports.get(device)
+   return value['rect'].copy() if value and value['sequence']==fixture['sequence'] else None

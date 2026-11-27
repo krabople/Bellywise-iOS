@@ -23,5 +23,8 @@ class BridgeTests(unittest.TestCase):
   self.assertEqual(expected['presentation'],'modal')
   self.assertFalse(self.request('/ready',device='iphone',**{**expected,'presentation':'page'})['accepted'])
   self.assertFalse(self.bridge.confirmed('iphone',expected))
-  self.assertTrue(self.request('/ready',device='iphone',**expected)['accepted'])
+  self.assertFalse(self.request('/ready',device='iphone',**expected)['accepted'])
+  rect={'left':20,'top':100,'width':500,'height':600}
+  self.assertTrue(self.request('/ready',device='iphone',**expected,viewport=json.dumps(rect))['accepted'])
+  self.assertEqual(self.bridge.viewport('iphone',expected),rect)
 if __name__=='__main__':unittest.main()

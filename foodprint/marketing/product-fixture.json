@@ -1,13 +1,33 @@
 {
-  "code": "3017620422003",
+  "code": "21106521",
   "product": {
-    "brands": "Ferrero, Nutella",
-    "code": "3017620422003",
-    "ingredients_text": "sugar, palm oil",
-    "ingredients_text_fr": "Sucre, huile de palme, NOISETTES 13%, cacao maigre 7,4%, LAIT écrémé en poudre 6,6%, LACTOSERUM en poudre, émulsifiants: lécithines [SOJA), vanilline. Sans gluten.",
-    "product_name": "Nutella",
-    "product_name_fr": "Nutella"
+    "code": "21106521",
+    "ingredients_text": "tomatoes (49%), cooked spaghetti pasta loops (43%) [water, durum wheat semolina], sugar, water, modified maize starch, onian powder salt, fortified wheat flour [wheat flour, calcium carbonate, iron, niacin (b3), thiamin (b1)], acidity regulator (citric acid), paprika, rapeseed oil, paprika extract, yeast extract, flavourings, allergy advice! for allergens, including cereals containing gluten, see ingredients in bold",
+    "ingredients_text_en": "tomatoes (49%), cooked spaghetti pasta loops (43%) [water, durum wheat semolina], sugar, water, modified maize starch, onian powder salt, fortified wheat flour [wheat flour, calcium carbonate, iron, niacin (b3), thiamin (b1)], acidity regulator (citric acid), paprika, rapeseed oil, paprika extract, yeast extract, flavourings, allergy advice! for allergens, including cereals containing gluten, see ingredients in bold",
+    "product_name": "Spaghetti Loops"
   },
   "status": 1,
-  "status_verbose": "product found"
+  "status_verbose": "product found",
+  "reviewedIngredients": [
+    "Tomato",
+    "Water",
+    "Durum wheat semolina",
+    "Sugar",
+    "Modified maize starch",
+    "Onion powder",
+    "Salt",
+    "Wheat flour",
+    "Calcium carbonate",
+    "Folic acid",
+    "Iron",
+    "Niacin",
+    "Thiamin",
+    "Citric acid",
+    "Paprika",
+    "Rapeseed oil",
+    "Paprika extract",
+    "Yeast extract",
+    "Flavourings"
+  ],
+  "reviewNote": "Published OFF record for the barcode visible in the original recording, checked against its recorded packet photograph. Corrected the missing onion-powder/salt separator and included the photographed folic acid entry. No typical recipe assumptions."
 }

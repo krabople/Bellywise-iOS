@@ -79,7 +79,10 @@ try:
     if not visible_capture(evidence):
      raise RuntimeError(f'Visible app content was not verified for {locale}/{device}/{scene}; screenshot rejected.')
     raw=file.read_bytes();width,height=struct.unpack('>II',raw[16:24]);assert width>1000 and height>2000
-    records[locale].append({'device':device,'order':order,'scene':scene,'file':str(file.relative_to(out)),'width':width,'height':height,'sha256':hashlib.sha256(raw).hexdigest()})
+    viewport=bridge.viewport(device,fixture)
+    if scene=='ingredients':
+     if not viewport or viewport['left']+viewport['width']>width+2 or viewport['top']+viewport['height']>height+2:raise RuntimeError('The actual ingredient viewport is outside the screenshot.')
+    records[locale].append({'device':device,'order':order,'scene':scene,'file':str(file.relative_to(out)),'width':width,'height':height,'viewport':viewport,'sha256':hashlib.sha256(raw).hexdigest()})
   session.cleanup()
   sessions.pop(device)
  for locale in locales:
