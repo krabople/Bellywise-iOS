@@ -87,7 +87,7 @@ jobs:
         run: bash scripts/ci/build-ios.sh
       - name: Capture French iPhone and iPad screens first
         if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures'
-        run: DEVELOPER_DIR="$(cat artifacts/xcode-developer-dir.txt)" python3 scripts/ci/capture-localized.py --locales fr --keep-devices
+        run: DEVELOPER_DIR="$(cat artifacts/xcode-developer-dir.txt)" python3 scripts/ci/capture-localized.py --locales fr
       - name: Keep French native captures for visual review
         if: always() && github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/localised-screen-captures'
         uses: actions/upload-artifact@v7
@@ -154,7 +154,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/ci/prepare-capture-reuse.py
       - name: Capture French screens with verified native startup
-        run: python3 scripts/ci/capture-localized.py --locales fr --keep-devices
+        run: python3 scripts/ci/capture-localized.py --locales fr
       - name: Keep French native captures for visual review
         if: always()
         uses: actions/upload-artifact@v7

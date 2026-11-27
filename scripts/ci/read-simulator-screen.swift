@@ -9,12 +9,18 @@ guard CommandLine.arguments.count == 2 else {
 }
 let url = URL(fileURLWithPath: CommandLine.arguments[1])
 guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-  let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+  let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+    kCGImageSourceCreateThumbnailFromImageAlways: true,
+    kCGImageSourceThumbnailMaxPixelSize: 1800,
+    kCGImageSourceCreateThumbnailWithTransform: true
+  ] as CFDictionary) else {
   fputs("The simulator screenshot could not be decoded.\n", stderr)
   exit(1)
 }
 do {
   let request = VNRecognizeTextRequest()
+  // Headless hosted Macs do not always provide a usable Metal accelerator.
+  request.usesCPUOnly = true
   request.recognitionLevel = .accurate
   request.recognitionLanguages = ["en-US"]
   request.usesLanguageCorrection = true

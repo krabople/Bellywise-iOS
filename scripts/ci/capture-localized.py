@@ -3,7 +3,7 @@ from pathlib import Path
 import argparse,hashlib,importlib.util,json,os,re,struct,subprocess,time
 from capture_fixture_bridge import FixtureBridge
 root=Path(__file__).resolve().parents[2]
-parser=argparse.ArgumentParser();parser.add_argument('--locales');parser.add_argument('--exclude');parser.add_argument('--keep-devices',action='store_true');args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('--locales');parser.add_argument('--exclude');args=parser.parse_args()
 if os.environ.get('GITHUB_ACTIONS')!='true':raise SystemExit('Native capture is restricted to disposable GitHub CI simulators.')
 spec=importlib.util.spec_from_file_location('simulator_session',Path(__file__).with_name('simulator-session.py'));module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 original_select=module.select_device
@@ -22,12 +22,13 @@ if args.locales:locales=[l for l in locales if l in args.locales.split(',')]
 if args.exclude:locales=[l for l in locales if l not in args.exclude.split(',')]
 out=root/'artifacts/localized-captures';out.mkdir(parents=True,exist_ok=True)
 sessions={}
+records={locale:[] for locale in locales}
 bridge=FixtureBridge();bridge.start()
 try:
  for device,family in [('iphone','iPhone'),('ipad','iPad')]:
-  directory=root/'artifacts'/('capture-session-'+device);directory.mkdir(exist_ok=True)
+  directory=root/'artifacts'/('capture-session-'+('fr' if args.locales=='fr' else 'remaining')+'-'+device);directory.mkdir(exist_ok=True)
   session=module.Session(directory,bundle);sessions[device]=session
-  # Reuse only devices this same CI run created in the first capture phase.
+  # Keep a single owned simulator running to avoid memory/Metal contention.
   if not session.state['created']:
    session.start(str(app),sdk,family)
    # Process existence alone never establishes a successful app startup.
@@ -44,9 +45,7 @@ try:
   identifier=session.state['device']
   subprocess.run(['xcrun','simctl','status_bar',identifier,'override','--time','9:41','--dataNetwork','wifi','--wifiMode','active','--wifiBars','3','--batteryState','charged','--batteryLevel','100'],check=True)
   subprocess.run(['xcrun','simctl','ui',identifier,'appearance','light'],check=True)
- for locale in locales:
-  records=[]
-  for device,session in sessions.items():
+  for locale in locales:
    scenes=['journal','ingredients','patterns','symptom','photo' if device=='iphone' else 'checkin','ingredient','repeat','checkin' if device=='iphone' else 'discover','notifications','privacy']
    for order,scene in enumerate(scenes,1):
     dest=out/locale/device;dest.mkdir(parents=True,exist_ok=True)
@@ -62,17 +61,19 @@ try:
     file=dest/f'{order:02d}-{scene}.png'
     subprocess.run(['xcrun','simctl','io',session.state['device'],'screenshot','--type=png',str(file)],check=True,timeout=30,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     # Never accept a loading spinner or a system sheet as an app screenshot.
-    evidence=json.loads(subprocess.check_output([str(root/'artifacts/read-simulator-screen'),str(file)],timeout=30))
+    evidence=json.loads(subprocess.check_output([str(root/'artifacts/read-simulator-screen'),str(file)],timeout=90))
     (dest/f'{order:02d}-{scene}-ocr.json').write_text(json.dumps(evidence,ensure_ascii=False))
     lines=evidence.get('lines',[])
     text=' '.join(lines).lower()
     if len(lines)<5 or 'open in bellywise' in text:
      raise RuntimeError(f'Visible app content was not verified for {locale}/{device}/{scene}; screenshot rejected.')
     raw=file.read_bytes();width,height=struct.unpack('>II',raw[16:24]);assert width>1000 and height>2000
-    records.append({'device':device,'order':order,'scene':scene,'file':str(file.relative_to(out)),'width':width,'height':height,'sha256':hashlib.sha256(raw).hexdigest()})
-  (out/locale/'capture-manifest.json').write_text(json.dumps({'locale':locale,'source':os.environ.get('CAPTURE_SOURCE_SHA',os.environ.get('GITHUB_SHA')),'renderer':'actual iOS Simulator capture entry point, shared production components','screenshots':records},indent=2))
-  print(f'Captured {locale}: {len(records)} actual iOS screenshots.',flush=True)
+    records[locale].append({'device':device,'order':order,'scene':scene,'file':str(file.relative_to(out)),'width':width,'height':height,'sha256':hashlib.sha256(raw).hexdigest()})
+  session.cleanup()
+  sessions.pop(device)
+ for locale in locales:
+  (out/locale/'capture-manifest.json').write_text(json.dumps({'locale':locale,'source':os.environ.get('CAPTURE_SOURCE_SHA',os.environ.get('GITHUB_SHA')),'renderer':'actual iOS Simulator capture entry point, shared production components','screenshots':records[locale]},indent=2))
+  print(f'Captured {locale}: {len(records[locale])} actual iOS screenshots.',flush=True)
 finally:
  bridge.stop()
- if not args.keep_devices:
-  for session in sessions.values():session.cleanup()
+ for session in sessions.values():session.cleanup()
