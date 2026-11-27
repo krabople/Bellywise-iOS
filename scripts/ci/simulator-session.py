@@ -224,7 +224,14 @@ class Session:
             raise RuntimeError('A simulator session already exists; refusing to reuse it.')
         self.state['startedAt'] = time.time()
         self.save()
-        code, output = self.simctl('list', '--json', name='simulator-inventory')
+        # A reuse-only runner has not warmed CoreSimulator through xcodebuild.
+        # Its first inventory request can outlive the ordinary command budget.
+        for inventory_attempt in (1, 2):
+            code, output = self.simctl('list', '--json', name=f'simulator-inventory-{inventory_attempt}', timeout=120)
+            if not code:
+                break
+            self.report('Waiting for the cold CoreSimulator service before inventory retry.')
+            time.sleep(5)
         if code:
             raise RuntimeError('Cannot list installed simulator runtimes.')
         runtime, device_type = select_device(json.loads(output), sdk, family)
